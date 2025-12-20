@@ -97,3 +97,23 @@ python -m cli logs <auction_id>
 - Terminal state management (no duplicate bids)
 - Timezone-aware CLI (converts UTC to local time)
 
+## Testing
+
+Run all tests:
+```bash
+pytest
+```
+
+Run with coverage:
+```bash
+pytest --cov=. --cov-report=html
+```
+
+Run specific test suites:
+```bash
+pytest tests/unit/          # Unit tests only
+pytest tests/integration/   # Integration tests only
+```
+
+See `tests/README.md` for more testing details.
+
