@@ -71,21 +71,27 @@ You need to register your application with eBay to get API credentials:
 
 ### 3. Configure Environment Variables
 
-Create a `.env` file in the project root:
+Copy the example environment file and fill in your actual values:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` and replace the placeholders with your actual eBay API credentials and configuration:
 
 ```bash
 # eBay API Configuration
-EBAY_APP_ID=your_ebay_app_id
-EBAY_CERT_ID=your_ebay_cert_id
-EBAY_DEV_ID=your_ebay_dev_id
-EBAY_ENV=sandbox
-EBAY_OAUTH_TOKEN=your_oauth_token_here
+EBAY_APP_ID=your_ebay_app_id              # Replace with your actual App ID
+EBAY_CERT_ID=your_ebay_cert_id            # Replace with your actual Cert ID
+EBAY_DEV_ID=your_ebay_dev_id              # Replace with your actual Dev ID
+EBAY_ENV=sandbox                          # Use 'sandbox' for testing, 'production' for live
+EBAY_OAUTH_TOKEN=your_oauth_token_here    # Replace with your actual OAuth token
 
 # Server Configuration
-SECRET_KEY=generate-a-random-secret-key-here
-DATABASE_URL=sqlite:///./sniper.db
+SECRET_KEY=your-generated-secret-key      # Generate with: openssl rand -hex 32
+DATABASE_URL=sqlite:///./sniper.db        # For local development (SQLite)
 
-# Optional: Server URL (for CLI)
+# Optional: Server URL (for CLI to connect to remote server)
 SNIPER_SERVER_URL=http://localhost:8000
 ```
 
@@ -185,7 +191,7 @@ For production use, deploy the server to Railway so it runs 24/7 and can execute
 
 1. In Railway dashboard, click on your application service (not the database)
 2. Go to the "Variables" tab
-3. Add the following environment variables:
+3. Add the following environment variables (use the values from your `.env.example` file as a template, but replace placeholders with your actual values):
 
    **Required Variables:**
    ```
@@ -194,8 +200,14 @@ For production use, deploy the server to Railway so it runs 24/7 and can execute
    EBAY_DEV_ID=your_ebay_dev_id
    EBAY_OAUTH_TOKEN=your_oauth_token
    EBAY_ENV=production
-   SECRET_KEY=generate-a-random-secret-key-here
+   SECRET_KEY=your-generated-secret-key
    ```
+
+   **For reference, here's what each variable means:**
+   - `EBAY_APP_ID`, `EBAY_CERT_ID`, `EBAY_DEV_ID`: Your eBay API credentials from [eBay Developers](https://developer.ebay.com/)
+   - `EBAY_OAUTH_TOKEN`: Your eBay OAuth access token
+   - `EBAY_ENV`: Set to `sandbox` for testing, `production` for live auctions
+   - `SECRET_KEY`: A random secret key for JWT token signing (generate with `openssl rand -hex 32`)
 
    **Database Variable (Already Set):**
    - `DATABASE_URL` is automatically provided by Railway's PostgreSQL service
@@ -206,6 +218,12 @@ For production use, deploy the server to Railway so it runs 24/7 and can execute
    ```bash
    openssl rand -hex 32
    ```
+
+**Note:** For local development, you can copy `.env.example` to `.env` and fill in your actual values:
+```bash
+cp .env.example .env
+# Then edit .env with your actual credentials
+```
 
 #### Step 5: Install PostgreSQL Driver
 
