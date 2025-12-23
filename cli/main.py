@@ -60,22 +60,32 @@ def list():
             click.echo("No snipers found.")
             return
         
-        # Print header (matching exact format from requirements)
-        click.echo(f"{'ID':<4}  {'Status':<12}  {'Ends At (Local)':<20}  {'Max Bid':<10}  {'URL':<40}  {'Item':<30}")
+        # Print header: ID, Status, Current Bid, Max Bid, Ends At, Item, URL
+        click.echo(f"{'ID':<4}  {'Status':<12}  {'Current Bid':<12}  {'Max Bid':<10}  {'Ends At':<16}  {'Item':<24}  {'URL':<40}")
         click.echo("-" * 120)
         
         # Print rows
         for sniper in snipers:
-            ends_at_local = client.to_local_time(sniper['auction_end_time_utc'])
-            # Convert max_bid to Decimal/float for formatting (API returns as string)
+            # Format time without seconds
+            ends_at_local = client.to_local_time_no_seconds(sniper['auction_end_time_utc'])
+            
+            # Convert prices to float for formatting (API returns as string)
+            current_price = float(sniper['current_price']) if isinstance(sniper['current_price'], str) else sniper['current_price']
             max_bid = float(sniper['max_bid']) if isinstance(sniper['max_bid'], str) else sniper['max_bid']
+            
+            current_bid_str = f"${current_price:.2f}"
             max_bid_str = f"${max_bid:.2f}"
-            url = sniper['listing_url']
+            
+            # Truncate item title to 24 characters
             item_title = sniper['item_title']
+            if len(item_title) > 24:
+                item_title = item_title[:21] + "..."
+            
+            url = sniper['listing_url']
             
             click.echo(
-                f"{sniper['id']:<4}  {sniper['status']:<12}  {ends_at_local:<20}  "
-                f"{max_bid_str:<10}  {url:<40}  {item_title:<30}"
+                f"{sniper['id']:<4}  {sniper['status']:<12}  {current_bid_str:<12}  {max_bid_str:<10}  "
+                f"{ends_at_local:<16}  {item_title:<24}  {url:<40}"
             )
     except Exception as e:
         click.echo(f"Failed to list snipers: {e}", err=True)

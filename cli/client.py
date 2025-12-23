@@ -95,4 +95,15 @@ class SniperClient:
         # Convert to local timezone
         dt_local = dt_utc.astimezone(self.timezone)
         return dt_local.strftime("%Y-%m-%d %H:%M:%S")
+    
+    def to_local_time_no_seconds(self, utc_time_str: str) -> str:
+        """Convert UTC time string to local timezone string without seconds."""
+        # Parse UTC datetime
+        dt_utc = datetime.fromisoformat(utc_time_str.replace("Z", "+00:00"))
+        if dt_utc.tzinfo is None:
+            dt_utc = pytz.UTC.localize(dt_utc)
+        
+        # Convert to local timezone
+        dt_local = dt_utc.astimezone(self.timezone)
+        return dt_local.strftime("%Y-%m-%d %H:%M")
 

@@ -257,31 +257,54 @@ Since we're using PostgreSQL, you need to add the PostgreSQL adapter to your req
 
 Update your local CLI to point to the Railway server:
 
-**Option 1: Environment Variable**
+**1. Find Your Railway App URL:**
+
+1. Go to [Railway Dashboard](https://railway.app/dashboard)
+2. Click on your project "creative-manifestation"
+3. Click on your application service (not the PostgreSQL service)
+4. Go to the "Settings" tab
+5. Find the "Domain" or "Public URL" - it should look like:
+   - `https://creative-manifestation-production.up.railway.app` or
+   - `https://creative-manifestation.up.railway.app`
+6. Copy this URL (you'll use it below)
+
+**2. Set the Server URL (Choose One Method):**
+
+**Option 1: Environment Variable (Recommended)**
 ```bash
-export SNIPER_SERVER_URL=https://your-app.up.railway.app
+# Add to your shell profile (~/.zshrc, ~/.bashrc, etc.)
+export SNIPER_SERVER_URL=https://creative-manifestation-production.up.railway.app
+
+# Or set it for the current session:
+export SNIPER_SERVER_URL=https://creative-manifestation-production.up.railway.app
 ```
 
-**Option 2: Update CLI Config File**
+**Option 2: Temporary (Current Terminal Session Only)**
 ```bash
-# Edit ~/.ebay-sniper/config.json
-{
-  "timezone": "America/New_York",
-  "server_url": "https://your-app.up.railway.app"
-}
+export SNIPER_SERVER_URL=https://creative-manifestation-production.up.railway.app
 ```
 
-**Option 3: Update CLI Code**
-Edit `cli/config.py` and change:
+**Option 3: Update CLI Code (Permanent)**
+Edit `cli/config.py` and change the default:
 ```python
-SERVER_URL = os.getenv("SNIPER_SERVER_URL", "https://your-app.up.railway.app")
+SERVER_URL = os.getenv("SNIPER_SERVER_URL", "https://creative-manifestation-production.up.railway.app")
 ```
+(Replace with your actual Railway URL)
 
-Then test the connection:
+**3. Test the Connection:**
+
+First, authenticate with the server:
 ```bash
 python3 -m cli auth
+# Enter your username and password when prompted
+```
+
+Then test listing snipers:
+```bash
 python3 -m cli list
 ```
+
+If you see "No snipers found" or a list of snipers, the connection is working!
 
 #### Step 8: Monitor Your Deployment
 
