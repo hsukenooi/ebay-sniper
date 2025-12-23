@@ -1,9 +1,12 @@
-from .main import run_worker
 import uvicorn
 import logging
 import threading
+from dotenv import load_dotenv
 from database import init_db
-from .api import app
+from server.api import app
+
+# Load environment variables from .env file
+load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 def run_worker_thread():
     """Run the worker in a separate thread."""
-    from .worker import Worker
+    from server.worker import Worker
     worker = Worker()
     worker.run_loop()
 

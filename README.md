@@ -67,7 +67,7 @@ You need to register your application with eBay to get API credentials:
    - **App ID (Client ID)**
    - **Cert ID (Client Secret)**
    - **Dev ID**
-5. For OAuth token, you'll need to complete the OAuth flow (this depends on your use case)
+5. For OAuth token, you'll need to obtain a **User OAuth token** (not Application token) because placing bids requires user authorization. Complete eBay's OAuth authorization code flow to get a user access token.
 
 ### 3. Configure Environment Variables
 
@@ -85,7 +85,7 @@ EBAY_APP_ID=your_ebay_app_id              # Replace with your actual App ID
 EBAY_CERT_ID=your_ebay_cert_id            # Replace with your actual Cert ID
 EBAY_DEV_ID=your_ebay_dev_id              # Replace with your actual Dev ID
 EBAY_ENV=sandbox                          # Use 'sandbox' for testing, 'production' for live
-EBAY_OAUTH_TOKEN=your_oauth_token_here    # Replace with your actual OAuth token
+EBAY_OAUTH_TOKEN=your_oauth_token_here    # User OAuth token (required for placing bids)
 
 # Server Configuration
 SECRET_KEY=your-generated-secret-key      # Generate with: openssl rand -hex 32
@@ -99,7 +99,7 @@ SNIPER_SERVER_URL=http://localhost:8000
 - `SECRET_KEY`: Generate a random secret key for JWT token signing (e.g., use `openssl rand -hex 32`)
 - `EBAY_ENV`: Use `sandbox` for testing, `production` for live auctions
 - `DATABASE_URL`: Defaults to SQLite. For Railway deployment, this is automatically set by Railway's PostgreSQL service
-- `EBAY_OAUTH_TOKEN`: Your eBay OAuth access token (must be refreshed periodically)
+- `EBAY_OAUTH_TOKEN`: **User OAuth token** (not Application token). This is required because the system needs to place bids on your behalf, which requires user authorization. Obtain this through eBay's OAuth authorization code flow. The token must be refreshed periodically (typically expires after 18 months for user tokens).
 
 ### 4. Initialize Database
 
@@ -205,7 +205,7 @@ For production use, deploy the server to Railway so it runs 24/7 and can execute
 
    **For reference, here's what each variable means:**
    - `EBAY_APP_ID`, `EBAY_CERT_ID`, `EBAY_DEV_ID`: Your eBay API credentials from [eBay Developers](https://developer.ebay.com/)
-   - `EBAY_OAUTH_TOKEN`: Your eBay OAuth access token
+   - `EBAY_OAUTH_TOKEN`: Your eBay **User OAuth access token** (required for placing bids - must be obtained through eBay's OAuth authorization code flow, not an Application token)
    - `EBAY_ENV`: Set to `sandbox` for testing, `production` for live auctions
    - `SECRET_KEY`: A random secret key for JWT token signing (generate with `openssl rand -hex 32`)
 

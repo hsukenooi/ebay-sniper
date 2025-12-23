@@ -67,7 +67,9 @@ def list():
         # Print rows
         for sniper in snipers:
             ends_at_local = client.to_local_time(sniper['auction_end_time_utc'])
-            max_bid_str = f"${sniper['max_bid']:.2f}"
+            # Convert max_bid to Decimal/float for formatting (API returns as string)
+            max_bid = float(sniper['max_bid']) if isinstance(sniper['max_bid'], str) else sniper['max_bid']
+            max_bid_str = f"${max_bid:.2f}"
             url = sniper['listing_url']
             item_title = sniper['item_title']
             
@@ -92,11 +94,14 @@ def status(auction_id):
         
         if sniper['status'] == 'Skipped' and sniper.get('skip_reason'):
             click.echo(f"Reason: {sniper['skip_reason']}")
-            click.echo(f"Price at Check: ${sniper['current_price']:.2f}")
+            current_price = float(sniper['current_price']) if isinstance(sniper['current_price'], str) else sniper['current_price']
+            click.echo(f"Price at Check: ${current_price:.2f}")
         else:
             click.echo(f"Item: {sniper['item_title']}")
-            click.echo(f"Max bid: ${sniper['max_bid']:.2f}")
-            click.echo(f"Current price: ${sniper['current_price']:.2f}")
+            max_bid = float(sniper['max_bid']) if isinstance(sniper['max_bid'], str) else sniper['max_bid']
+            current_price = float(sniper['current_price']) if isinstance(sniper['current_price'], str) else sniper['current_price']
+            click.echo(f"Max bid: ${max_bid:.2f}")
+            click.echo(f"Current price: ${current_price:.2f}")
             click.echo(f"Ends at: {client.to_local_time(sniper['auction_end_time_utc'])}")
             click.echo(f"URL: {sniper['listing_url']}")
     except Exception as e:

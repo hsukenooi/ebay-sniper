@@ -38,7 +38,14 @@ class SniperClient:
             json={"listing_number": listing_number, "max_bid": float(max_bid)},
             headers=self._get_headers()
         )
-        response.raise_for_status()
+        if not response.ok:
+            # Try to extract error detail from response
+            try:
+                error_data = response.json()
+                error_msg = error_data.get("detail", response.text)
+                raise requests.exceptions.HTTPError(f"{response.status_code} {response.reason}: {error_msg}")
+            except (ValueError, KeyError):
+                response.raise_for_status()
         return response.json()
     
     def list_snipers(self) -> List[Dict[str, Any]]:

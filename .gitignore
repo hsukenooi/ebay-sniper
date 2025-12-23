@@ -15,5 +15,9 @@ dist/
 build/
 .DS_Store
 .env
+.env.production
+.env.sandbox
+.env.local
+.env.*.local
 .ebay-sniper/
 

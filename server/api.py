@@ -5,10 +5,15 @@ from decimal import Decimal
 from typing import Optional, List
 import jwt
 import os
+import requests
+from dotenv import load_dotenv
 from database import get_db, Auction, BidAttempt, AuctionStatus, BidResult, SessionLocal
 from .models import AuthRequest, AuthResponse, AddSniperRequest, AuctionResponse, BidAttemptResponse
 from .ebay_client import eBayClient
 import logging
+
+# Load environment variables before creating any clients
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +82,30 @@ def add_sniper(request: AddSniperRequest, db: Session = Depends(get_db), usernam
     # Fetch auction details from eBay
     try:
         details = ebay_client.get_auction_details(request.listing_number)
+    except ValueError as e:
+        # OAuth token or configuration issues
+        logger.error(f"Configuration error fetching auction {request.listing_number}: {e}")
+        raise HTTPException(status_code=400, detail=f"eBay API configuration error: {str(e)}")
+    except requests.exceptions.RequestException as e:
+        # Network or API errors
+        logger.error(f"eBay API error fetching auction {request.listing_number}: {e}")
+        error_detail = f"Failed to fetch auction from eBay: {str(e)}"
+        if hasattr(e.response, 'status_code'):
+            status_code = e.response.status_code
+            error_detail += f" (HTTP {status_code})"
+            # Provide more helpful message for 404 errors
+            if status_code == 404:
+                error_detail = (
+                    f"Listing {request.listing_number} not found via eBay Browse API. "
+                    f"This listing may not be accessible through the API, may have ended, "
+                    f"or may have regional restrictions. Please verify the listing exists and is active on eBay."
+                )
+        if hasattr(e.response, 'text') and e.response.text:
+            if not (hasattr(e.response, 'status_code') and e.response.status_code == 404):
+                error_detail += f" - {e.response.text[:200]}"
+        raise HTTPException(status_code=400, detail=error_detail)
     except Exception as e:
+        logger.error(f"Unexpected error fetching auction {request.listing_number}: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail=f"Failed to fetch auction details: {str(e)}")
     
     # Create auction
