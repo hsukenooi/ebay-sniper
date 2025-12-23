@@ -1,6 +1,7 @@
 import uvicorn
 import logging
 import threading
+import os
 from dotenv import load_dotenv
 from database import init_db
 from server.api import app
@@ -34,5 +35,7 @@ if __name__ == "__main__":
     logger.info("Worker thread started")
     
     # Start API server
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Railway and other PaaS providers set PORT environment variable
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
