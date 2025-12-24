@@ -21,9 +21,13 @@ class eBayClient:
         self.cert_id = os.getenv("EBAY_CERT_ID")
         self.dev_id = os.getenv("EBAY_DEV_ID")
         self.base_url = self.PRODUCTION_BASE if os.getenv("EBAY_ENV") == "production" else self.SANDBOX_BASE
-        # OAuth token can be set via environment variable or set_oauth_token()
-        token_from_env = os.getenv("EBAY_OAUTH_TOKEN")
-        self.oauth_token: Optional[str] = token_from_env
+        # OAuth tokens: Use Application token for Browse API, User token for Trading API
+        # If EBAY_OAUTH_APP_TOKEN is set, use it for Browse API (reading auction details)
+        # Otherwise fall back to EBAY_OAUTH_TOKEN
+        self.oauth_app_token: Optional[str] = os.getenv("EBAY_OAUTH_APP_TOKEN")
+        self.oauth_user_token: Optional[str] = os.getenv("EBAY_OAUTH_TOKEN")
+        # For backwards compatibility, if no app token, use user token for both
+        self.oauth_token: Optional[str] = self.oauth_app_token or self.oauth_user_token
         self.oauth_token_expires_at: Optional[datetime] = None
         # Set marketplace to US for production to avoid regional restrictions
         self.marketplace_id = self.MARKETPLACE_ID_US if os.getenv("EBAY_ENV") == "production" else None
@@ -33,24 +37,42 @@ class eBayClient:
         self.oauth_token = token
         self.oauth_token_expires_at = datetime.utcnow() + timedelta(seconds=expires_in - 300)  # Refresh 5 min early
         
-    def _ensure_token_valid(self):
-        """Ensure OAuth token is valid, refresh if needed."""
-        if not self.oauth_token:
-            raise ValueError("OAuth token not set. Please set EBAY_OAUTH_TOKEN environment variable.")
+    def _ensure_token_valid(self, use_user_token: bool = False):
+        """Ensure OAuth token is valid, refresh if needed.
+        
+        Args:
+            use_user_token: If True, check User token. If False, check App/User token.
+        """
+        token = self.oauth_user_token if use_user_token else (self.oauth_app_token or self.oauth_user_token)
+        if not token:
+            token_type = "User" if use_user_token else "Application/User"
+            raise ValueError(f"{token_type} OAuth token not set. Please set EBAY_OAUTH_TOKEN or EBAY_OAUTH_APP_TOKEN.")
         # Only check expiration if expires_at is set (tokens from API will have this, env tokens may not)
         if self.oauth_token_expires_at and datetime.utcnow() >= self.oauth_token_expires_at:
             raise ValueError("OAuth token expired. Please refresh your token.")
     
-    def _get_headers(self, include_appname: bool = False) -> Dict[str, str]:
+    def _get_headers(self, use_user_token: bool = False, include_appname: bool = False) -> Dict[str, str]:
         """Get headers for API requests.
         
         Args:
+            use_user_token: If True, use User OAuth token (for Trading API/bidding).
+                          If False, use Application token for Browse API (reading).
             include_appname: Whether to include X-EBAY-SOA-SECURITY-APPNAME header.
                             Browse API doesn't need it, but Trading API does.
         """
-        self._ensure_token_valid()
+        # Select appropriate token: User token for bidding, App token for reading
+        if use_user_token:
+            token = self.oauth_user_token
+            if not token:
+                raise ValueError("User OAuth token not set. Please set EBAY_OAUTH_TOKEN environment variable for bidding.")
+        else:
+            # Prefer app token for Browse API, fall back to user token
+            token = self.oauth_app_token or self.oauth_user_token
+            if not token:
+                raise ValueError("OAuth token not set. Please set EBAY_OAUTH_APP_TOKEN or EBAY_OAUTH_TOKEN.")
+        
         headers = {
-            "Authorization": f"Bearer {self.oauth_token}",
+            "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         }
         # Add marketplace ID header for production to ensure US site
@@ -100,6 +122,7 @@ class eBayClient:
     def get_auction_details(self, listing_number: str) -> Dict[str, Any]:
         """
         Fetch auction details including current price, end time, title, URL.
+        Uses Application OAuth token (if available) or falls back to User token.
         Tries multiple methods:
         1. Browse API getItem (standard endpoint)
         2. Browse API getItemByLegacyId (fallback for legacy item IDs)
@@ -111,14 +134,14 @@ class eBayClient:
         - currency
         - auction_end_time_utc (datetime)
         """
-        self._ensure_token_valid()
+        self._ensure_token_valid(use_user_token=False)  # Use App token for reading
         
         # Method 1: Try standard Browse API endpoint
         try:
             url = f"{self.base_url}/buy/browse/v1/item/{listing_number}"
             params = {"fieldgroups": "FULL"}
             
-            response = requests.get(url, headers=self._get_headers(), params=params, timeout=5)
+            response = requests.get(url, headers=self._get_headers(use_user_token=False), params=params, timeout=5)
             response.raise_for_status()
             data = response.json()
             return self._parse_browse_api_response(data, listing_number)
@@ -142,7 +165,7 @@ class eBayClient:
                 "legacy_item_id": listing_number
             }
             
-            response = requests.get(url, headers=self._get_headers(), params=params, timeout=5)
+            response = requests.get(url, headers=self._get_headers(use_user_token=False), params=params, timeout=5)
             response.raise_for_status()
             data = response.json()
             return self._parse_browse_api_response(data, listing_number)
@@ -168,17 +191,21 @@ class eBayClient:
         Returns dict with result information.
         """
         try:
-            self._ensure_token_valid()
+            self._ensure_token_valid(use_user_token=True)  # Must use User token for bidding
             
             # eBay Trading API - PlaceOffer requires XML
             # This is a simplified placeholder - production needs proper XML formatting
             url = f"{self.base_url}/ws/api.dll"
             
             # Construct XML payload (simplified - see eBay API docs for full structure)
+            # Use User token for Trading API
+            user_token = self.oauth_user_token
+            if not user_token:
+                raise ValueError("User OAuth token required for placing bids. Set EBAY_OAUTH_TOKEN.")
             xml_payload = f"""<?xml version="1.0" encoding="utf-8"?>
 <PlaceOfferRequest xmlns="urn:ebay:apis:eBLBaseComponents">
     <RequesterCredentials>
-        <eBayAuthToken>{self.oauth_token}</eBayAuthToken>
+        <eBayAuthToken>{user_token}</eBayAuthToken>
     </RequesterCredentials>
     <ItemID>{listing_number}</ItemID>
     <Offer>

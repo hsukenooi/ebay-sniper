@@ -85,7 +85,8 @@ EBAY_APP_ID=your_ebay_app_id              # Replace with your actual App ID
 EBAY_CERT_ID=your_ebay_cert_id            # Replace with your actual Cert ID
 EBAY_DEV_ID=your_ebay_dev_id              # Replace with your actual Dev ID
 EBAY_ENV=sandbox                          # Use 'sandbox' for testing, 'production' for live
-EBAY_OAUTH_TOKEN=your_oauth_token_here    # User OAuth token (required for placing bids)
+EBAY_OAUTH_TOKEN=your_oauth_token_here         # User OAuth token (required for placing bids)
+EBAY_OAUTH_APP_TOKEN=your_app_token_here       # Application OAuth token (optional, for reading auction details)
 
 # Server Configuration
 SECRET_KEY=your-generated-secret-key      # Generate with: openssl rand -hex 32
@@ -99,7 +100,8 @@ SNIPER_SERVER_URL=http://localhost:8000
 - `SECRET_KEY`: Generate a random secret key for JWT token signing (e.g., use `openssl rand -hex 32`)
 - `EBAY_ENV`: Use `sandbox` for testing, `production` for live auctions
 - `DATABASE_URL`: Defaults to SQLite. For Railway deployment, this is automatically set by Railway's PostgreSQL service
-- `EBAY_OAUTH_TOKEN`: **User OAuth token** (not Application token). This is required because the system needs to place bids on your behalf, which requires user authorization. Obtain this through eBay's OAuth authorization code flow. The token must be refreshed periodically (typically expires after 18 months for user tokens).
+- `EBAY_OAUTH_TOKEN`: **User OAuth token** (required for placing bids). This is required because the system needs to place bids on your behalf, which requires user authorization. Obtain this through eBay's OAuth authorization code flow. User access tokens expire after 2 hours, but you get a refresh token that can be used to get new access tokens for up to 18 months.
+- `EBAY_OAUTH_APP_TOKEN`: **Application OAuth token** (optional, recommended). Use this for reading auction details via the Browse API. Application tokens also expire after 2 hours but can be refreshed automatically without user interaction. If not set, the system will use the User token for both reading and bidding (which may expire more frequently).
 
 ### 4. Initialize Database
 
