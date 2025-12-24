@@ -214,11 +214,11 @@ def test_process_auction_bid_execution_time(db_session, sample_auction):
         mock_execute.assert_called_once()
 
 
-def test_execute_bid_uses_proper_increment(db_session, sample_auction):
-    """Test that bid execution uses proper bid increment calculation."""
+def test_execute_bid_uses_max_bid(db_session, sample_auction):
+    """Test that bid execution uses max_bid directly (eBay proxy bidding)."""
     worker = Worker()
     
-    # Set current price to $5.00 (should use $0.25 increment)
+    # Set current price to $5.00, max_bid to $10.00
     sample_auction.current_price = Decimal("5.00")
     sample_auction.max_bid = Decimal("10.00")
     db_session.commit()
@@ -229,18 +229,19 @@ def test_execute_bid_uses_proper_increment(db_session, sample_auction):
         result = worker._execute_bid(db_session, sample_auction)
         
         assert result is True
-        # Verify bid was placed with proper increment: $5.00 + $0.25 = $5.25
+        # Verify bid was placed with max_bid directly
+        # eBay's proxy bidding will automatically bid incrementally up to this amount
         mock_bid.assert_called_once()
         call_args = mock_bid.call_args
         bid_amount = call_args[0][1]  # Second argument is bid_amount
-        assert bid_amount == Decimal("5.25")  # $5.00 + $0.25 increment
+        assert bid_amount == Decimal("10.00")  # Should use max_bid directly
 
 
-def test_execute_bid_increment_respects_max_bid(db_session, sample_auction):
-    """Test that bid increment calculation respects max_bid limit."""
+def test_execute_bid_uses_max_bid_directly(db_session, sample_auction):
+    """Test that bid uses max_bid directly regardless of current price."""
     worker = Worker()
     
-    # Set current price to $4.00, max_bid to $4.99 (increment would be $0.05, so $4.05)
+    # Set current price to $4.00, max_bid to $4.99
     sample_auction.current_price = Decimal("4.00")
     sample_auction.max_bid = Decimal("4.99")
     db_session.commit()
@@ -251,17 +252,17 @@ def test_execute_bid_increment_respects_max_bid(db_session, sample_auction):
         result = worker._execute_bid(db_session, sample_auction)
         
         assert result is True
-        # Verify bid amount is capped at max_bid
+        # Verify bid uses max_bid directly (eBay proxy bidding handles increments)
         call_args = mock_bid.call_args
         bid_amount = call_args[0][1]
-        assert bid_amount == Decimal("4.05")  # $4.00 + $0.05, not exceeding max_bid
+        assert bid_amount == Decimal("4.99")  # Should use max_bid directly
 
 
-def test_execute_bid_high_price_increment(db_session, sample_auction):
-    """Test bid increment for high price ranges."""
+def test_execute_bid_high_price_uses_max_bid(db_session, sample_auction):
+    """Test that high price bids use max_bid directly."""
     worker = Worker()
     
-    # Set current price to $250.00 (should use $2.50 increment)
+    # Set current price to $250.00, max_bid to $300.00
     sample_auction.current_price = Decimal("250.00")
     sample_auction.max_bid = Decimal("300.00")
     db_session.commit()
@@ -272,17 +273,17 @@ def test_execute_bid_high_price_increment(db_session, sample_auction):
         result = worker._execute_bid(db_session, sample_auction)
         
         assert result is True
-        # Verify bid was placed with proper increment: $250.00 + $2.50 = $252.50
+        # Verify bid uses max_bid directly (eBay proxy bidding handles increments)
         call_args = mock_bid.call_args
         bid_amount = call_args[0][1]
-        assert bid_amount == Decimal("252.50")
+        assert bid_amount == Decimal("300.00")  # Should use max_bid directly
 
 
-def test_execute_bid_low_price_increment(db_session, sample_auction):
-    """Test bid increment for low price ranges."""
+def test_execute_bid_low_price_uses_max_bid(db_session, sample_auction):
+    """Test that low price bids use max_bid directly."""
     worker = Worker()
     
-    # Set current price to $0.50 (should use $0.01 increment)
+    # Set current price to $0.50, max_bid to $1.00
     sample_auction.current_price = Decimal("0.50")
     sample_auction.max_bid = Decimal("1.00")
     db_session.commit()
@@ -293,8 +294,8 @@ def test_execute_bid_low_price_increment(db_session, sample_auction):
         result = worker._execute_bid(db_session, sample_auction)
         
         assert result is True
-        # Verify bid was placed with proper increment: $0.50 + $0.01 = $0.51
+        # Verify bid uses max_bid directly (eBay proxy bidding handles increments)
         call_args = mock_bid.call_args
         bid_amount = call_args[0][1]
-        assert bid_amount == Decimal("0.51")
+        assert bid_amount == Decimal("1.00")  # Should use max_bid directly
 

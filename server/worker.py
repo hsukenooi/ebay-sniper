@@ -100,9 +100,9 @@ class Worker:
         delays = [0.1, 0.25, 0.5]  # 100ms, 250ms, 500ms
         timeout_range = (0.3, 0.6)  # 300-600ms
         
-        # Calculate bid amount with proper increment
-        min_increment = self.ebay_client.calculate_min_bid_increment(auction.current_price)
-        bid_amount = min(auction.current_price + min_increment, auction.max_bid)
+        # Use max_bid directly - eBay's proxy bidding system will automatically
+        # bid incrementally up to this amount as needed to stay ahead of other bidders
+        bid_amount = auction.max_bid
         
         for attempt in range(max_attempts):
             # Check if we've run out of time

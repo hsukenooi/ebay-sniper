@@ -36,7 +36,7 @@
 
 ### Bid Execution
 - Timing: `auction_end_time_utc - 3 seconds` (configurable via BID_OFFSET_SECONDS)
-- Bid amount: `min(current_price + 0.01, max_bid)`
+- Bid amount: `max_bid` (eBay's proxy bidding system will automatically bid incrementally up to this amount)
 - Retry strategy:
   - Max 4 attempts
   - Delays: 100ms → 250ms → 500ms

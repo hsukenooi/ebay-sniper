@@ -85,41 +85,22 @@ if ack is None or ack.text != 'Success':
 
 ---
 
-### 4. Bid Increment Validation Missing
+### 4. ✅ Bid Amount Strategy - FIXED
 
-**Problem**: eBay has specific bid increment rules (e.g., $0.01 for <$0.99, $0.05 for $1-$4.99, etc.). Currently we just add $0.01, which might violate eBay's rules and cause bid rejection.
+**Problem**: Initially implemented bid increment calculation, but this was incorrect. eBay uses **proxy bidding** - when you submit your maximum bid, eBay automatically bids incrementally on your behalf.
 
-**eBay Bid Increments** (approximate):
-- $0.01 - $0.99: $0.01 increments
-- $1.00 - $4.99: $0.05 increments
-- $5.00 - $24.99: $0.25 increments
-- $25.00 - $99.99: $0.50 increments
-- $100.00 - $249.99: $1.00 increments
-- $250.00 - $499.99: $2.50 increments
-- $500.00+: $5.00 increments
+**Solution**: Use `max_bid` directly when placing bids. eBay's proxy bidding system will:
+- Accept your maximum bid amount
+- Automatically bid incrementally as needed to stay ahead of other bidders
+- Only bid as much as necessary (up to your max_bid)
+- Handle all bid increment rules automatically
 
-**Solution**: Implement bid increment calculation:
-```python
-def calculate_min_bid_increment(current_price: Decimal) -> Decimal:
-    """Calculate the minimum bid increment based on eBay's rules."""
-    price = float(current_price)
-    if price < 1.00:
-        return Decimal("0.01")
-    elif price < 5.00:
-        return Decimal("0.05")
-    elif price < 25.00:
-        return Decimal("0.25")
-    elif price < 100.00:
-        return Decimal("0.50")
-    elif price < 250.00:
-        return Decimal("1.00")
-    elif price < 500.00:
-        return Decimal("2.50")
-    else:
-        return Decimal("5.00")
-```
+**Implementation**: 
+- Changed `worker.py` to use `auction.max_bid` directly instead of calculating `current_price + increment`
+- eBay's `<MaxBid>` element in PlaceOffer API accepts your maximum bid amount
+- eBay handles all increment logic server-side
 
-**Action Required**: Update `server/worker.py` to use proper bid increments.
+**Note**: The `calculate_min_bid_increment()` method still exists in `ebay_client.py` for potential future use, but is not used for bid placement.
 
 ---
 
