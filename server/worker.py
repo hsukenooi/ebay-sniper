@@ -22,13 +22,12 @@ class Worker:
         
     def _refresh_token_if_needed(self, auction_end_time: datetime):
         """Refresh OAuth token if it will expire before auction ends."""
-        if not self.ebay_client.oauth_token_expires_at:
-            return
-        
-        # Refresh if token expires within 5 minutes of auction end
-        if self.ebay_client.oauth_token_expires_at < auction_end_time - timedelta(minutes=5):
-            # Trigger token refresh (simplified - in production, implement actual refresh)
-            logger.info("Token refresh needed but not implemented in this version")
+        # Check user token expiration (used for bidding)
+        if self.ebay_client.oauth_user_token_expires_at:
+            # Refresh if token expires within 5 minutes of auction end
+            if self.ebay_client.oauth_user_token_expires_at < auction_end_time - timedelta(minutes=5):
+                logger.info("User OAuth token will expire before auction ends, refreshing...")
+                self.ebay_client.refresh_user_token()
     
     def _pre_bid_price_check(self, db: Session, auction: Auction) -> bool:
         """
