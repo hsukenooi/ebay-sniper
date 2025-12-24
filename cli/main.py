@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import click
 from decimal import Decimal, InvalidOperation
-from datetime import datetime
+from datetime import datetime, timedelta
 from .client import SniperClient
 from .config import save_token, get_timezone, save_timezone
 import sys
@@ -57,21 +57,45 @@ def list():
     """List all snipers."""
     try:
         client = SniperClient()
-        snipers = client.list_snipers()
+        all_snipers = client.list_snipers()
         
-        if not snipers:
+        # Filter snipers based on status and date
+        today = datetime.utcnow().date()
+        filtered_snipers = []
+        
+        for sniper in all_snipers:
+            status = sniper['status']
+            
+            # Always show Scheduled items
+            if status == "Scheduled":
+                filtered_snipers.append(sniper)
+            # Show Failed or Cancelled items if Ends At is within a week of today
+            elif status in ["Failed", "Cancelled"]:
+                # Parse the auction_end_time_utc string to datetime
+                ends_at_utc = datetime.fromisoformat(sniper['auction_end_time_utc'].replace("Z", "+00:00"))
+                ends_at_date = ends_at_utc.date()
+                
+                # Check if within 7 days of today (can be past or future)
+                days_diff = abs((ends_at_date - today).days)
+                if days_diff <= 7:
+                    filtered_snipers.append(sniper)
+        
+        if not filtered_snipers:
             click.echo("No snipers found.")
             return
         
-        # Sort by ID descending (highest first)
-        snipers = sorted(snipers, key=lambda x: x['id'], reverse=True)
+        # Sort by Ends At (auction_end_time_utc) - ascending (earliest first)
+        filtered_snipers = sorted(
+            filtered_snipers, 
+            key=lambda x: datetime.fromisoformat(x['auction_end_time_utc'].replace("Z", "+00:00"))
+        )
         
         # Print header: ID, Status, Current Bid, Max Bid, Ends At, Item, URL
         click.echo(f"{'ID':<4}  {'Status':<12}  {'Current Bid':<12}  {'Max Bid':<10}  {'Ends At':<12}  {'Item':<48}  {'URL':<40}")
         click.echo("-" * 140)
         
         # Print rows
-        for sniper in snipers:
+        for sniper in filtered_snipers:
             # Format time without seconds and without year
             ends_at_local = client.to_local_time_no_year(sniper['auction_end_time_utc'])
             
