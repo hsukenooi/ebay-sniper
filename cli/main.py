@@ -90,14 +90,14 @@ def list():
             key=lambda x: datetime.fromisoformat(x['auction_end_time_utc'].replace("Z", "+00:00"))
         )
         
-        # Print header: ID, Status, Current Bid, Max Bid, Ends At, Item, URL
-        click.echo(f"{'ID':<4}  {'Status':<12}  {'Current Bid':<12}  {'Max Bid':<10}  {'Ends At':<12}  {'Item':<48}  {'URL':<40}")
+               # Print header: ID, Status, Current Bid, Max Bid, Time Remaining, Item, URL
+               click.echo(f"{'ID':<4}  {'Status':<12}  {'Current Bid':<12}  {'Max Bid':<10}  {'Time Left':<12}  {'Item':<48}  {'URL':<40}")
         click.echo("-" * 140)
         
         # Print rows
         for listing in filtered_listings:
-            # Format time without seconds and without year
-            ends_at_local = client.to_local_time_no_year(listing['auction_end_time_utc'])
+            # Format time remaining until auction ends
+            time_remaining = client.time_until_auction_end(listing['auction_end_time_utc'])
             
             # Convert prices to float for formatting (API returns as string)
             current_price = float(listing['current_price']) if isinstance(listing['current_price'], str) else listing['current_price']
@@ -115,7 +115,7 @@ def list():
             
             click.echo(
                 f"{listing['id']:<4}  {listing['status']:<12}  {current_bid_str:<12}  {max_bid_str:<10}  "
-                f"{ends_at_local:<12}  {item_title:<48}  {url:<40}"
+                f"{time_remaining:<12}  {item_title:<48}  {url:<40}"
             )
     except Exception as e:
         click.echo(f"Failed to list listings: {e}", err=True)

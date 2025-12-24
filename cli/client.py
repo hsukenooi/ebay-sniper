@@ -1,7 +1,8 @@
 import requests
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
+import math
 import pytz
 from .config import SERVER_URL, get_token, get_timezone
 
@@ -117,4 +118,40 @@ class SniperClient:
         # Convert to local timezone
         dt_local = dt_utc.astimezone(self.timezone)
         return dt_local.strftime("%m-%d %H:%M")
+    
+    def time_until_auction_end(self, auction_end_time_utc: str) -> str:
+        """Calculate and format time remaining until auction ends.
+        
+        Returns:
+            - Hours (e.g., "5h") if less than 36 hours remaining
+            - Days (e.g., "3d") if 36 hours or more remaining
+            - "Ended" if the auction has already ended
+        """
+        # Parse UTC datetime
+        dt_end = datetime.fromisoformat(auction_end_time_utc.replace("Z", "+00:00"))
+        if dt_end.tzinfo is None:
+            dt_end = pytz.UTC.localize(dt_end)
+        
+        # Get current time in UTC
+        now_utc = datetime.now(pytz.UTC)
+        
+        # Calculate time difference
+        time_diff = dt_end - now_utc
+        
+        # If auction has ended
+        if time_diff.total_seconds() <= 0:
+            return "Ended"
+        
+        # Calculate total hours
+        total_hours = time_diff.total_seconds() / 3600
+        
+        # Show hours if less than 36 hours, otherwise show days
+        if total_hours < 36:
+            hours = int(total_hours)
+            return f"{hours}h"
+        else:
+            # Calculate days from total hours, rounding up to nearest day
+            # e.g., 36.5 hours = 1.52 days -> 2 days, 48.1 hours = 2.00 days -> 2 days
+            days = math.ceil(total_hours / 24)
+            return f"{days}d"
 
