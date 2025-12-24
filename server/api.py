@@ -73,7 +73,7 @@ def auth(request: AuthRequest):
 
 @app.post("/sniper/add", response_model=AuctionResponse)
 def add_sniper(request: AddSniperRequest, db: Session = Depends(get_db), username: str = Depends(verify_token)):
-    """Add a new sniper for an auction."""
+    """Add a new listing for an auction."""
     # Check if auction already exists
     existing = db.query(Auction).filter(Auction.listing_number == request.listing_number).first()
     if existing:
@@ -130,7 +130,7 @@ def add_sniper(request: AddSniperRequest, db: Session = Depends(get_db), usernam
 
 @app.get("/sniper/list", response_model=List[AuctionResponse])
 def list_snipers(db: Session = Depends(get_db), username: str = Depends(verify_token)):
-    """List all snipers, refreshing prices if cache expired."""
+    """List all listings, refreshing prices if cache expired."""
     auctions = db.query(Auction).order_by(Auction.auction_end_time_utc).all()
     
     # Refresh prices if cache expired
@@ -164,7 +164,7 @@ def get_status(auction_id: int, db: Session = Depends(get_db), username: str = D
 
 @app.delete("/sniper/{auction_id}")
 def remove_sniper(auction_id: int, db: Session = Depends(get_db), username: str = Depends(verify_token)):
-    """Remove (cancel) a sniper."""
+    """Remove (cancel) a listing."""
     auction = db.query(Auction).filter(Auction.id == auction_id).first()
     if not auction:
         raise HTTPException(status_code=404, detail="Auction not found")
@@ -176,7 +176,7 @@ def remove_sniper(auction_id: int, db: Session = Depends(get_db), username: str 
     auction.status = AuctionStatus.CANCELLED.value
     db.commit()
     
-    return {"message": "Sniper cancelled"}
+    return {"message": "Listing cancelled"}
 
 
 @app.get("/sniper/{auction_id}/logs", response_model=Optional[BidAttemptResponse])

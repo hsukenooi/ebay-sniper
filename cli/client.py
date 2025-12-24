@@ -32,7 +32,7 @@ class SniperClient:
         return self.token
     
     def add_sniper(self, listing_number: str, max_bid: Decimal) -> Dict[str, Any]:
-        """Add a new sniper."""
+        """Add a new listing."""
         response = requests.post(
             f"{self.server_url}/sniper/add",
             json={"listing_number": listing_number, "max_bid": float(max_bid)},
@@ -49,7 +49,7 @@ class SniperClient:
         return response.json()
     
     def list_snipers(self) -> List[Dict[str, Any]]:
-        """List all snipers."""
+        """List all listings."""
         response = requests.get(
             f"{self.server_url}/sniper/list",
             headers=self._get_headers()
@@ -58,7 +58,7 @@ class SniperClient:
         return response.json()
     
     def get_status(self, auction_id: int) -> Dict[str, Any]:
-        """Get status of a sniper."""
+        """Get status of a listing."""
         response = requests.get(
             f"{self.server_url}/sniper/{auction_id}/status",
             headers=self._get_headers()
@@ -67,7 +67,7 @@ class SniperClient:
         return response.json()
     
     def remove_sniper(self, auction_id: int):
-        """Remove a sniper."""
+        """Remove a listing."""
         response = requests.delete(
             f"{self.server_url}/sniper/{auction_id}",
             headers=self._get_headers()

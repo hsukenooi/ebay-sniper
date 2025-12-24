@@ -32,12 +32,12 @@ def auth(username, password):
 @click.argument("listing_number")
 @click.argument("max_bid", type=str)
 def add(listing_number, max_bid):
-    """Add a new sniper for an auction."""
+    """Add a new listing for an auction."""
     try:
         max_bid_decimal = Decimal(max_bid.replace("$", "").replace(",", ""))
         client = SniperClient()
         result = client.add_sniper(listing_number, max_bid_decimal)
-        click.echo(f"Sniper added for auction {result['id']}")
+        click.echo(f"Listing added for auction {result['id']}")
         click.echo(f"Item: {result['item_title']}")
         current_price = float(result['current_price']) if isinstance(result['current_price'], str) else result['current_price']
         click.echo(f"Current Bid: ${current_price:.2f}")
@@ -48,45 +48,45 @@ def add(listing_number, max_bid):
         click.echo(f"Invalid max_bid format: {max_bid}", err=True)
         sys.exit(1)
     except Exception as e:
-        click.echo(f"Failed to add sniper: {e}", err=True)
+        click.echo(f"Failed to add listing: {e}", err=True)
         sys.exit(1)
 
 
 @cli.command()
 def list():
-    """List all snipers."""
+    """List all listings."""
     try:
         client = SniperClient()
-        all_snipers = client.list_snipers()
+        all_listings = client.list_snipers()
         
-        # Filter snipers based on status and date
+        # Filter listings based on status and date
         today = datetime.utcnow().date()
-        filtered_snipers = []
+        filtered_listings = []
         
-        for sniper in all_snipers:
-            status = sniper['status']
+        for listing in all_listings:
+            status = listing['status']
             
             # Always show Scheduled items
             if status == "Scheduled":
-                filtered_snipers.append(sniper)
+                filtered_listings.append(listing)
             # Show Failed or Cancelled items if Ends At is within a week of today
             elif status in ["Failed", "Cancelled"]:
                 # Parse the auction_end_time_utc string to datetime
-                ends_at_utc = datetime.fromisoformat(sniper['auction_end_time_utc'].replace("Z", "+00:00"))
+                ends_at_utc = datetime.fromisoformat(listing['auction_end_time_utc'].replace("Z", "+00:00"))
                 ends_at_date = ends_at_utc.date()
                 
                 # Check if within 7 days of today (can be past or future)
                 days_diff = abs((ends_at_date - today).days)
                 if days_diff <= 7:
-                    filtered_snipers.append(sniper)
+                    filtered_listings.append(listing)
         
-        if not filtered_snipers:
-            click.echo("No snipers found.")
+        if not filtered_listings:
+            click.echo("No listings found.")
             return
         
         # Sort by Ends At (auction_end_time_utc) - ascending (earliest first)
-        filtered_snipers = sorted(
-            filtered_snipers, 
+        filtered_listings = sorted(
+            filtered_listings, 
             key=lambda x: datetime.fromisoformat(x['auction_end_time_utc'].replace("Z", "+00:00"))
         )
         
@@ -95,55 +95,55 @@ def list():
         click.echo("-" * 140)
         
         # Print rows
-        for sniper in filtered_snipers:
+        for listing in filtered_listings:
             # Format time without seconds and without year
-            ends_at_local = client.to_local_time_no_year(sniper['auction_end_time_utc'])
+            ends_at_local = client.to_local_time_no_year(listing['auction_end_time_utc'])
             
             # Convert prices to float for formatting (API returns as string)
-            current_price = float(sniper['current_price']) if isinstance(sniper['current_price'], str) else sniper['current_price']
-            max_bid = float(sniper['max_bid']) if isinstance(sniper['max_bid'], str) else sniper['max_bid']
+            current_price = float(listing['current_price']) if isinstance(listing['current_price'], str) else listing['current_price']
+            max_bid = float(listing['max_bid']) if isinstance(listing['max_bid'], str) else listing['max_bid']
             
             current_bid_str = f"${current_price:.2f}"
             max_bid_str = f"${max_bid:.2f}"
             
             # Truncate item title to 48 characters
-            item_title = sniper['item_title']
+            item_title = listing['item_title']
             if len(item_title) > 48:
                 item_title = item_title[:45] + "..."
             
-            url = sniper['listing_url']
+            url = listing['listing_url']
             
             click.echo(
-                f"{sniper['id']:<4}  {sniper['status']:<12}  {current_bid_str:<12}  {max_bid_str:<10}  "
+                f"{listing['id']:<4}  {listing['status']:<12}  {current_bid_str:<12}  {max_bid_str:<10}  "
                 f"{ends_at_local:<12}  {item_title:<48}  {url:<40}"
             )
     except Exception as e:
-        click.echo(f"Failed to list snipers: {e}", err=True)
+        click.echo(f"Failed to list listings: {e}", err=True)
         sys.exit(1)
 
 
 @cli.command()
 @click.argument("auction_id", type=int)
 def status(auction_id):
-    """Get status of a sniper."""
+    """Get status of a listing."""
     try:
         client = SniperClient()
-        sniper = client.get_status(auction_id)
+        listing = client.get_status(auction_id)
         
-        click.echo(f"Status: {sniper['status']}")
+        click.echo(f"Status: {listing['status']}")
         
-        if sniper['status'] == 'Skipped' and sniper.get('skip_reason'):
-            click.echo(f"Reason: {sniper['skip_reason']}")
-            current_price = float(sniper['current_price']) if isinstance(sniper['current_price'], str) else sniper['current_price']
+        if listing['status'] == 'Skipped' and listing.get('skip_reason'):
+            click.echo(f"Reason: {listing['skip_reason']}")
+            current_price = float(listing['current_price']) if isinstance(listing['current_price'], str) else listing['current_price']
             click.echo(f"Price at Check: ${current_price:.2f}")
         else:
-            click.echo(f"Item: {sniper['item_title']}")
-            max_bid = float(sniper['max_bid']) if isinstance(sniper['max_bid'], str) else sniper['max_bid']
-            current_price = float(sniper['current_price']) if isinstance(sniper['current_price'], str) else sniper['current_price']
+            click.echo(f"Item: {listing['item_title']}")
+            max_bid = float(listing['max_bid']) if isinstance(listing['max_bid'], str) else listing['max_bid']
+            current_price = float(listing['current_price']) if isinstance(listing['current_price'], str) else listing['current_price']
             click.echo(f"Max bid: ${max_bid:.2f}")
             click.echo(f"Current price: ${current_price:.2f}")
-            click.echo(f"Ends at: {client.to_local_time(sniper['auction_end_time_utc'])}")
-            click.echo(f"URL: {sniper['listing_url']}")
+            click.echo(f"Ends at: {client.to_local_time(listing['auction_end_time_utc'])}")
+            click.echo(f"URL: {listing['listing_url']}")
     except Exception as e:
         click.echo(f"Failed to get status: {e}", err=True)
         sys.exit(1)
@@ -152,20 +152,20 @@ def status(auction_id):
 @cli.command()
 @click.argument("auction_id", type=int)
 def remove(auction_id):
-    """Remove (cancel) a sniper."""
+    """Remove (cancel) a listing."""
     try:
         client = SniperClient()
         client.remove_sniper(auction_id)
-        click.echo(f"Sniper {auction_id} cancelled successfully.")
+        click.echo(f"Listing {auction_id} cancelled successfully.")
     except Exception as e:
-        click.echo(f"Failed to remove sniper: {e}", err=True)
+        click.echo(f"Failed to remove listing: {e}", err=True)
         sys.exit(1)
 
 
 @cli.command()
 @click.argument("auction_id", type=int)
 def logs(auction_id):
-    """Get bid attempt logs for a sniper."""
+    """Get bid attempt logs for a listing."""
     try:
         client = SniperClient()
         logs = client.get_logs(auction_id)
