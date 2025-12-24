@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Optional, Dict, Any
 import logging
 import base64
+import xml.etree.ElementTree as ET
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,20 @@ class eBayClient:
             }
             
             response = requests.post(self.oauth_token_url, headers=headers, data=data, timeout=10)
+            
+            # Handle specific error cases
+            if response.status_code == 400:
+                error_data = response.json()
+                error = error_data.get("error", "")
+                if error == "invalid_grant":
+                    logger.error(
+                        "Refresh token expired or revoked. User must re-authenticate using scripts/get_ebay_tokens.py"
+                    )
+                    return False
+                elif error == "invalid_client":
+                    logger.error("Invalid client credentials. Check EBAY_APP_ID and EBAY_CERT_ID")
+                    return False
+            
             response.raise_for_status()
             
             token_data = response.json()
@@ -130,6 +145,9 @@ class eBayClient:
             logger.info(f"Successfully refreshed User OAuth token (expires in {expires_in}s)")
             return True
             
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Failed to refresh User OAuth token: HTTP {e.response.status_code} - {e.response.text}")
+            return False
         except Exception as e:
             logger.error(f"Failed to refresh User OAuth token: {e}")
             return False
@@ -150,7 +168,10 @@ class eBayClient:
                 datetime.utcnow() >= self.oauth_user_token_expires_at):
                 logger.info("User OAuth token expired or about to expire, refreshing...")
                 if not self.refresh_user_token():
-                    raise ValueError("User OAuth token expired and refresh failed. Please check EBAY_OAUTH_REFRESH_TOKEN.")
+                    raise ValueError(
+                        "User OAuth token expired and refresh failed. "
+                        "Refresh token may have expired. Please re-authenticate using scripts/get_ebay_tokens.py"
+                    )
         else:
             # Check App token first, fall back to User token
             if self.oauth_app_token:
@@ -221,13 +242,52 @@ class eBayClient:
         item_title = data.get("title", "Unknown Item")
         listing_url = data.get("itemWebUrl", f"https://www.ebay.com/itm/{listing_number}")
         
+        # Extract listing type (validate it's an auction)
+        listing_type = data.get("listingType", "")
+        if listing_type and listing_type.upper() != "AUCTION":
+            raise ValueError(
+                f"Item {listing_number} is not an auction (type: {listing_type}). "
+                "Only auction-style listings can be bid on."
+            )
+        
         return {
             "listing_url": listing_url,
             "item_title": item_title,
             "current_price": current_price,
             "currency": currency,
             "auction_end_time_utc": auction_end_time_utc,
+            "listing_type": listing_type,
         }
+    
+    @staticmethod
+    def calculate_min_bid_increment(current_price: Decimal) -> Decimal:
+        """
+        Calculate the minimum bid increment based on eBay's rules.
+        
+        eBay Bid Increments:
+        - $0.01 - $0.99: $0.01 increments
+        - $1.00 - $4.99: $0.05 increments
+        - $5.00 - $24.99: $0.25 increments
+        - $25.00 - $99.99: $0.50 increments
+        - $100.00 - $249.99: $1.00 increments
+        - $250.00 - $499.99: $2.50 increments
+        - $500.00+: $5.00 increments
+        """
+        price = float(current_price)
+        if price < 1.00:
+            return Decimal("0.01")
+        elif price < 5.00:
+            return Decimal("0.05")
+        elif price < 25.00:
+            return Decimal("0.25")
+        elif price < 100.00:
+            return Decimal("0.50")
+        elif price < 250.00:
+            return Decimal("1.00")
+        elif price < 500.00:
+            return Decimal("2.50")
+        else:
+            return Decimal("5.00")
     
     def _get_item_via_trading_api(self, listing_number: str) -> Dict[str, Any]:
         """Fallback: Get item details via Trading API GetItem call."""
@@ -316,12 +376,61 @@ class eBayClient:
             logger.error(f"Error in getItemByLegacyId fallback for {listing_number}: {e}")
             raise
     
+    def _parse_trading_api_response(self, xml_response: str) -> Dict[str, Any]:
+        """
+        Parse Trading API XML response and extract error codes/messages.
+        
+        Returns dict with:
+        - success: bool
+        - error_code: str or None
+        - error_message: str or None
+        """
+        try:
+            root = ET.fromstring(xml_response)
+            namespace = "{urn:ebay:apis:eBLBaseComponents}"
+            
+            # Check Ack element
+            ack_elem = root.find(f".//{namespace}Ack")
+            ack = ack_elem.text if ack_elem is not None else None
+            
+            if ack == "Success":
+                return {"success": True, "error_code": None, "error_message": None}
+            
+            # Parse errors
+            errors = root.findall(f".//{namespace}Errors")
+            error_codes = []
+            error_messages = []
+            
+            for error in errors:
+                code_elem = error.find(f".//{namespace}ErrorCode")
+                msg_elem = error.find(f".//{namespace}LongMessage")
+                
+                if code_elem is not None:
+                    error_codes.append(code_elem.text)
+                if msg_elem is not None:
+                    error_messages.append(msg_elem.text)
+            
+            error_code = error_codes[0] if error_codes else "UNKNOWN"
+            error_message = error_messages[0] if error_messages else "Unknown error"
+            
+            return {
+                "success": False,
+                "error_code": error_code,
+                "error_message": error_message
+            }
+        except ET.ParseError as e:
+            logger.error(f"Failed to parse Trading API XML response: {e}")
+            return {
+                "success": False,
+                "error_code": "PARSE_ERROR",
+                "error_message": f"Failed to parse XML response: {e}"
+            }
+    
     def place_bid(self, listing_number: str, bid_amount: Decimal) -> Dict[str, Any]:
         """
         Place a bid on an auction.
         
-        NOTE: eBay Trading API requires XML format. This is a placeholder implementation.
-        In production, properly format XML request according to eBay Trading API docs.
+        eBay Trading API requires XML format. Includes SiteID and proper error handling.
         
         Returns dict with result information.
         """
@@ -329,24 +438,29 @@ class eBayClient:
             self._ensure_token_valid(use_user_token=True)  # Must use User token for bidding
             
             # eBay Trading API - PlaceOffer requires XML
-            # This is a simplified placeholder - production needs proper XML formatting
             url = f"{self.base_url}/ws/api.dll"
             
-            # Construct XML payload (simplified - see eBay API docs for full structure)
             # Use User token for Trading API
             user_token = self.oauth_user_token
             if not user_token:
                 raise ValueError("User OAuth token required for placing bids. Set EBAY_OAUTH_TOKEN.")
+            
+            # Construct XML payload with SiteID (0 = US site)
+            # Escape XML special characters in values
+            def escape_xml(value):
+                return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            
             xml_payload = f"""<?xml version="1.0" encoding="utf-8"?>
 <PlaceOfferRequest xmlns="urn:ebay:apis:eBLBaseComponents">
     <RequesterCredentials>
-        <eBayAuthToken>{user_token}</eBayAuthToken>
+        <eBayAuthToken>{escape_xml(user_token)}</eBayAuthToken>
     </RequesterCredentials>
-    <ItemID>{listing_number}</ItemID>
+    <ItemID>{escape_xml(listing_number)}</ItemID>
     <Offer>
         <MaxBid>{float(bid_amount)}</MaxBid>
         <Quantity>1</Quantity>
     </Offer>
+    <SiteID>0</SiteID>
 </PlaceOfferRequest>"""
             
             headers = {
@@ -369,13 +483,14 @@ class eBayClient:
                     xml_payload = f"""<?xml version="1.0" encoding="utf-8"?>
 <PlaceOfferRequest xmlns="urn:ebay:apis:eBLBaseComponents">
     <RequesterCredentials>
-        <eBayAuthToken>{user_token}</eBayAuthToken>
+        <eBayAuthToken>{escape_xml(user_token)}</eBayAuthToken>
     </RequesterCredentials>
-    <ItemID>{listing_number}</ItemID>
+    <ItemID>{escape_xml(listing_number)}</ItemID>
     <Offer>
         <MaxBid>{float(bid_amount)}</MaxBid>
         <Quantity>1</Quantity>
     </Offer>
+    <SiteID>0</SiteID>
 </PlaceOfferRequest>"""
                     response = requests.post(url, headers=headers, data=xml_payload, timeout=0.6)
                     status_code = response.status_code
@@ -384,14 +499,38 @@ class eBayClient:
                 raise requests.exceptions.RequestException(f"eBay server error: {status_code}")
             
             if status_code == 429:
-                raise requests.exceptions.RequestException("Rate limited (429)")
+                # Check for Retry-After header
+                retry_after = response.headers.get("Retry-After")
+                error_msg = "Rate limited (429)"
+                if retry_after:
+                    error_msg += f" - Retry after {retry_after} seconds"
+                raise requests.exceptions.RequestException(error_msg)
             
             response.raise_for_status()
             
-            # Parse XML response (simplified - in production, parse XML properly)
-            # Check for error codes in response
-            if "Error" in response.text or "Ack" not in response.text:
-                raise requests.exceptions.RequestException("Bid placement failed - check response")
+            # Parse XML response properly
+            result = self._parse_trading_api_response(response.text)
+            
+            if not result["success"]:
+                error_code = result["error_code"]
+                error_message = result["error_message"]
+                
+                # Map common error codes to user-friendly messages
+                error_code_messages = {
+                    "10729": "Item not found or auction ended",
+                    "10734": "Auction has ended",
+                    "10736": "Bid amount is below the minimum bid increment",
+                    "10735": "Bid amount exceeds maximum bid",
+                    "10730": "Bid retraction not allowed",
+                    "10731": "Cannot bid on your own item",
+                    "10732": "Cannot bid on behalf of another user",
+                    "10733": "Bidder is blocked from this auction",
+                }
+                
+                friendly_msg = error_code_messages.get(error_code, error_message)
+                raise requests.exceptions.RequestException(
+                    f"eBay API error {error_code}: {friendly_msg}"
+                )
             
             return {"success": True}
             
