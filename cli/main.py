@@ -39,8 +39,11 @@ def add(listing_number, max_bid):
         result = client.add_sniper(listing_number, max_bid_decimal)
         click.echo(f"Sniper added for auction {result['id']}")
         click.echo(f"Item: {result['item_title']}")
+        current_price = float(result['current_price']) if isinstance(result['current_price'], str) else result['current_price']
+        click.echo(f"Current Bid: ${current_price:.2f}")
         click.echo(f"Max bid: ${result['max_bid']}")
         click.echo(f"Ends at: {client.to_local_time(result['auction_end_time_utc'])}")
+        click.echo(f"URL: {result['listing_url']}")
     except InvalidOperation:
         click.echo(f"Invalid max_bid format: {max_bid}", err=True)
         sys.exit(1)
@@ -60,14 +63,17 @@ def list():
             click.echo("No snipers found.")
             return
         
+        # Sort by ID descending (highest first)
+        snipers = sorted(snipers, key=lambda x: x['id'], reverse=True)
+        
         # Print header: ID, Status, Current Bid, Max Bid, Ends At, Item, URL
-        click.echo(f"{'ID':<4}  {'Status':<12}  {'Current Bid':<12}  {'Max Bid':<10}  {'Ends At':<16}  {'Item':<24}  {'URL':<40}")
-        click.echo("-" * 120)
+        click.echo(f"{'ID':<4}  {'Status':<12}  {'Current Bid':<12}  {'Max Bid':<10}  {'Ends At':<12}  {'Item':<48}  {'URL':<40}")
+        click.echo("-" * 140)
         
         # Print rows
         for sniper in snipers:
-            # Format time without seconds
-            ends_at_local = client.to_local_time_no_seconds(sniper['auction_end_time_utc'])
+            # Format time without seconds and without year
+            ends_at_local = client.to_local_time_no_year(sniper['auction_end_time_utc'])
             
             # Convert prices to float for formatting (API returns as string)
             current_price = float(sniper['current_price']) if isinstance(sniper['current_price'], str) else sniper['current_price']
@@ -76,16 +82,16 @@ def list():
             current_bid_str = f"${current_price:.2f}"
             max_bid_str = f"${max_bid:.2f}"
             
-            # Truncate item title to 24 characters
+            # Truncate item title to 48 characters
             item_title = sniper['item_title']
-            if len(item_title) > 24:
-                item_title = item_title[:21] + "..."
+            if len(item_title) > 48:
+                item_title = item_title[:45] + "..."
             
             url = sniper['listing_url']
             
             click.echo(
                 f"{sniper['id']:<4}  {sniper['status']:<12}  {current_bid_str:<12}  {max_bid_str:<10}  "
-                f"{ends_at_local:<16}  {item_title:<24}  {url:<40}"
+                f"{ends_at_local:<12}  {item_title:<48}  {url:<40}"
             )
     except Exception as e:
         click.echo(f"Failed to list snipers: {e}", err=True)
