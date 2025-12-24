@@ -85,8 +85,9 @@ EBAY_APP_ID=your_ebay_app_id              # Replace with your actual App ID
 EBAY_CERT_ID=your_ebay_cert_id            # Replace with your actual Cert ID
 EBAY_DEV_ID=your_ebay_dev_id              # Replace with your actual Dev ID
 EBAY_ENV=sandbox                          # Use 'sandbox' for testing, 'production' for live
-EBAY_OAUTH_TOKEN=your_oauth_token_here         # User OAuth token (required for placing bids)
-EBAY_OAUTH_APP_TOKEN=your_app_token_here       # Application OAuth token (optional, for reading auction details)
+EBAY_OAUTH_TOKEN=your_oauth_token_here              # User OAuth access token (required for placing bids)
+EBAY_OAUTH_REFRESH_TOKEN=your_refresh_token_here    # User OAuth refresh token (required for automatic refresh)
+EBAY_OAUTH_APP_TOKEN=your_app_token_here            # Application OAuth token (optional, for reading auction details)
 
 # Server Configuration
 SECRET_KEY=your-generated-secret-key      # Generate with: openssl rand -hex 32
@@ -100,8 +101,27 @@ SNIPER_SERVER_URL=http://localhost:8000
 - `SECRET_KEY`: Generate a random secret key for JWT token signing (e.g., use `openssl rand -hex 32`)
 - `EBAY_ENV`: Use `sandbox` for testing, `production` for live auctions
 - `DATABASE_URL`: Defaults to SQLite. For Railway deployment, this is automatically set by Railway's PostgreSQL service
-- `EBAY_OAUTH_TOKEN`: **User OAuth token** (required for placing bids). This is required because the system needs to place bids on your behalf, which requires user authorization. Obtain this through eBay's OAuth authorization code flow. User access tokens expire after 2 hours, but you get a refresh token that can be used to get new access tokens for up to 18 months.
-- `EBAY_OAUTH_APP_TOKEN`: **Application OAuth token** (optional, recommended). Use this for reading auction details via the Browse API. Application tokens also expire after 2 hours but can be refreshed automatically without user interaction. If not set, the system will use the User token for both reading and bidding (which may expire more frequently).
+- `EBAY_OAUTH_TOKEN`: **User OAuth access token** (required for placing bids). This is required because the system needs to place bids on your behalf, which requires user authorization. Obtain this through eBay's OAuth authorization code flow. User access tokens expire after 2 hours, but the system will automatically refresh them using the refresh token.
+- `EBAY_OAUTH_REFRESH_TOKEN`: **User OAuth refresh token** (required for automatic token refresh). When you obtain your User OAuth token through eBay's OAuth flow, you'll receive both an access token and a refresh token. Store the refresh token here to enable automatic token refresh. Refresh tokens can last up to 18 months.
+
+**Getting Your Tokens:**
+
+- **Recommended: Use the helper script**
+  ```bash
+  python3 scripts/get_ebay_tokens.py
+  ```
+  This interactive script will:
+  1. Guide you through the OAuth authorization flow
+  2. Generate the authorization URL for you to visit
+  3. Exchange the authorization code for tokens
+  4. Optionally save the tokens to your `.env` file
+  
+  **Requirements:**
+  - Have `EBAY_APP_ID` and `EBAY_CERT_ID` in your `.env` file (or enter them when prompted)
+  - Know your eBay Redirect URI (RuName) from your eBay Developer account
+  
+- **Manual way**: Follow eBay's OAuth authorization code flow manually (see [eBay Developer Docs](https://developer.ebay.com/api-docs/static/oauth-consent-request.html))
+- `EBAY_OAUTH_APP_TOKEN`: **Application OAuth token** (optional, recommended). Use this for reading auction details via the Browse API. Application tokens also expire after 2 hours but can be refreshed automatically without user interaction. If not set, the system will use the User token for both reading and bidding (which may expire more frequently). The system will automatically refresh Application tokens when they expire.
 
 ### 4. Initialize Database
 
@@ -200,14 +220,18 @@ For production use, deploy the server to Railway so it runs 24/7 and can execute
    EBAY_APP_ID=your_ebay_app_id
    EBAY_CERT_ID=your_ebay_cert_id
    EBAY_DEV_ID=your_ebay_dev_id
-   EBAY_OAUTH_TOKEN=your_oauth_token
+   EBAY_OAUTH_TOKEN=your_user_access_token
+   EBAY_OAUTH_REFRESH_TOKEN=your_refresh_token
+   EBAY_OAUTH_APP_TOKEN=your_app_token (optional but recommended)
    EBAY_ENV=production
    SECRET_KEY=your-generated-secret-key
    ```
 
    **For reference, here's what each variable means:**
    - `EBAY_APP_ID`, `EBAY_CERT_ID`, `EBAY_DEV_ID`: Your eBay API credentials from [eBay Developers](https://developer.ebay.com/)
-   - `EBAY_OAUTH_TOKEN`: Your eBay **User OAuth access token** (required for placing bids - must be obtained through eBay's OAuth authorization code flow, not an Application token)
+   - `EBAY_OAUTH_TOKEN`: Your eBay **User OAuth access token** (required for placing bids - must be obtained through eBay's OAuth authorization code flow)
+   - `EBAY_OAUTH_REFRESH_TOKEN`: Your eBay **User OAuth refresh token** (required for automatic token refresh - obtained alongside the access token during OAuth flow)
+   - `EBAY_OAUTH_APP_TOKEN`: Your eBay **Application OAuth token** (optional, recommended - for reading auction details, automatically refreshed)
    - `EBAY_ENV`: Set to `sandbox` for testing, `production` for live auctions
    - `SECRET_KEY`: A random secret key for JWT token signing (generate with `openssl rand -hex 32`)
 
@@ -373,7 +397,11 @@ python3 -m cli logs 1
 
 **eBay API Issues:**
 - Verify your API credentials are correct
-- Check that `EBAY_OAUTH_TOKEN` is valid and not expired
+- **Token Issues:**
+  - Check that `EBAY_OAUTH_TOKEN` is valid
+  - Ensure `EBAY_OAUTH_REFRESH_TOKEN` is set for automatic token refresh
+  - The system will automatically refresh tokens when they expire (5 minutes before expiration)
+  - If tokens from environment variables don't have expiration info, they'll be used until they fail, then refresh will be attempted
 - For sandbox: ensure `EBAY_ENV=sandbox`
 - Check eBay API status and rate limits
 
