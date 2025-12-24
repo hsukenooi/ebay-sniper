@@ -3,7 +3,7 @@ import click
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta
 from .client import SniperClient
-from .config import save_token, get_timezone, save_timezone
+from .config import save_token, get_timezone
 import sys
 
 

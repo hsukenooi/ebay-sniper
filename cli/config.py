@@ -37,12 +37,4 @@ def get_timezone() -> str:
     return "UTC"
 
 
-def save_timezone(timezone: str):
-    """Save user timezone."""
-    ensure_config_dir()
-    config = {}
-    if CONFIG_FILE.exists():
-        config = json.loads(CONFIG_FILE.read_text())
-    config["timezone"] = timezone
-    CONFIG_FILE.write_text(json.dumps(config, indent=2))
 

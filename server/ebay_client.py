@@ -21,6 +21,7 @@ class eBayClient:
     def __init__(self):
         self.app_id = os.getenv("EBAY_APP_ID")
         self.cert_id = os.getenv("EBAY_CERT_ID")
+        # Dev ID is not required for OAuth 2.0 but kept for backwards compatibility
         self.dev_id = os.getenv("EBAY_DEV_ID")
         self.base_url = self.PRODUCTION_BASE if os.getenv("EBAY_ENV") == "production" else self.SANDBOX_BASE
         # OAuth tokens: Use Application token for Browse API, User token for Trading API
@@ -29,7 +30,7 @@ class eBayClient:
         self.oauth_app_token: Optional[str] = os.getenv("EBAY_OAUTH_APP_TOKEN")
         self.oauth_user_token: Optional[str] = os.getenv("EBAY_OAUTH_TOKEN")
         self.oauth_user_refresh_token: Optional[str] = os.getenv("EBAY_OAUTH_REFRESH_TOKEN")
-        # For backwards compatibility, if no app token, use user token for both
+        # Legacy attribute for backwards compatibility (deprecated - use oauth_app_token or oauth_user_token)
         self.oauth_token: Optional[str] = self.oauth_app_token or self.oauth_user_token
         # Track expiration times separately for app and user tokens
         self.oauth_app_token_expires_at: Optional[datetime] = None
@@ -40,7 +41,12 @@ class eBayClient:
         self.oauth_token_url = f"{self.base_url}/identity/v1/oauth2/token"
         
     def set_oauth_token(self, token: str, expires_in: int):
-        """Set OAuth token with expiration (legacy method - use set_app_token/set_user_token instead)."""
+        """
+        Set OAuth token with expiration (legacy method - deprecated).
+        
+        DEPRECATED: This method exists only for backwards compatibility.
+        Use oauth_app_token/oauth_user_token environment variables instead.
+        """
         self.oauth_token = token
         self.oauth_app_token_expires_at = datetime.utcnow() + timedelta(seconds=expires_in - 300)  # Refresh 5 min early
     
@@ -256,13 +262,16 @@ class eBayClient:
             "current_price": current_price,
             "currency": currency,
             "auction_end_time_utc": auction_end_time_utc,
-            "listing_type": listing_type,
         }
     
     @staticmethod
     def calculate_min_bid_increment(current_price: Decimal) -> Decimal:
         """
         Calculate the minimum bid increment based on eBay's rules.
+        
+        NOTE: This method is currently unused in production code.
+        eBay's proxy bidding system handles increments automatically when using max_bid.
+        Kept for potential future use or reference.
         
         eBay Bid Increments:
         - $0.01 - $0.99: $0.01 increments
@@ -288,17 +297,6 @@ class eBayClient:
             return Decimal("2.50")
         else:
             return Decimal("5.00")
-    
-    def _get_item_via_trading_api(self, listing_number: str) -> Dict[str, Any]:
-        """Fallback: Get item details via Trading API GetItem call."""
-        try:
-            # Trading API uses XML and different endpoint structure
-            # For now, this is a placeholder - Trading API requires more complex XML handling
-            # and may not work with OAuth tokens the same way
-            raise NotImplementedError("Trading API fallback not yet implemented")
-        except Exception as e:
-            logger.debug(f"Trading API fallback failed: {e}")
-            raise
     
     def get_auction_details(self, listing_number: str) -> Dict[str, Any]:
         """

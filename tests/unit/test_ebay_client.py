@@ -498,7 +498,9 @@ def test_get_auction_details_auction_type_case_insensitive(mock_get):
     
     # Should succeed (case insensitive check)
     details = client.get_auction_details("123456789")
-    assert details["listing_type"] == "auction"
+    # listing_type is validated but not returned in response
+    assert "listing_url" in details
+    assert "item_title" in details
 
 
 @patch("server.ebay_client.requests.post")
