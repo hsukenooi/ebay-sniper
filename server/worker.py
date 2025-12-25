@@ -226,13 +226,15 @@ class Worker:
                     logger.info(f"Auction {auction.id} outcome: {outcome_data['outcome']}, final price: {outcome_data['final_price']}")
                     
                 except Exception as e:
-                    logger.error(f"Error checking outcome for auction {auction.id}: {e}")
+                    logger.error(f"Error checking outcome for auction {auction.id}: {e}", exc_info=True)
+                    db.rollback()
                     # Don't fail the entire loop, continue with other auctions
                     continue
                     
         except Exception as e:
-            logger.error(f"Error in _check_auction_outcomes: {e}")
-            # Don't fail the worker loop
+            logger.error(f"Error in _check_auction_outcomes: {e}", exc_info=True)
+            db.rollback()
+            # Don't fail the worker loop - let caller handle cleanup
     
     def _process_auction(self, db: Session, auction: Auction):
         """Process a single auction according to its timing."""
@@ -282,6 +284,7 @@ class Worker:
         
         while self.running:
             try:
+                # Process active auctions
                 db = SessionLocal()
                 try:
                     # Get all scheduled or executing auctions
@@ -293,7 +296,7 @@ class Worker:
                         try:
                             self._process_auction(db, auction)
                         except Exception as e:
-                            logger.error(f"Error processing auction {auction.id}: {e}")
+                            logger.error(f"Error processing auction {auction.id}: {e}", exc_info=True)
                             db.rollback()
                             continue
                     
@@ -301,8 +304,15 @@ class Worker:
                 finally:
                     db.close()
                 
-                # Check outcomes for ended auctions with BidPlaced status
-                self._check_auction_outcomes(db)
+                # Check outcomes for ended auctions with BidPlaced status (use separate session)
+                outcome_db = SessionLocal()
+                try:
+                    self._check_auction_outcomes(outcome_db)
+                except Exception as e:
+                    logger.error(f"Error checking auction outcomes: {e}", exc_info=True)
+                    outcome_db.rollback()
+                finally:
+                    outcome_db.close()
                 
                 # Sleep briefly before next iteration
                 time.sleep(0.5)  # Check every 500ms
@@ -312,7 +322,7 @@ class Worker:
                 self.running = False
                 break
             except Exception as e:
-                logger.error(f"Error in worker loop: {e}")
+                logger.error(f"Error in worker loop: {e}", exc_info=True)
                 time.sleep(1)
     
     def stop(self):
