@@ -59,17 +59,18 @@ def list():
         client = SniperClient()
         all_listings = client.list_snipers()
         
-        # Filter listings based on status and date
+        # Filter listings into active and inactive
         today = datetime.utcnow().date()
-        filtered_listings = []
+        active_listings = []
+        inactive_listings = []
         
         for listing in all_listings:
             status = listing['status']
             
-            # Always show Scheduled, Executing, and BidPlaced items
+            # Active listings: Scheduled, Executing, and BidPlaced
             if status in ["Scheduled", "Executing", "BidPlaced"]:
-                filtered_listings.append(listing)
-            # Show Failed, Cancelled, or Skipped items if Ends At is within a week of today
+                active_listings.append(listing)
+            # Inactive listings: Failed, Cancelled, or Skipped (if within 7 days)
             elif status in ["Failed", "Cancelled", "Skipped"]:
                 # Parse the auction_end_time_utc string to datetime
                 ends_at_utc = datetime.fromisoformat(listing['auction_end_time_utc'].replace("Z", "+00:00"))
@@ -78,82 +79,100 @@ def list():
                 # Check if within 7 days of today (can be past or future)
                 days_diff = abs((ends_at_date - today).days)
                 if days_diff <= 7:
-                    filtered_listings.append(listing)
+                    inactive_listings.append(listing)
         
-        if not filtered_listings:
+        # Helper function to build table rows from listings
+        def build_table_rows(listings):
+            rows = []
+            for listing in listings:
+                # Format time remaining until auction ends
+                time_remaining = client.time_until_auction_end(listing['auction_end_time_utc'])
+                
+                # Convert prices to float for formatting (API returns as string)
+                current_price = float(listing['current_price']) if isinstance(listing['current_price'], str) else listing['current_price']
+                max_bid = float(listing['max_bid']) if isinstance(listing['max_bid'], str) else listing['max_bid']
+                
+                current_bid_str = f"${current_price:.2f}"
+                max_bid_str = f"${max_bid:.2f}"
+                # Add asterisk if max bid is lower than current bid
+                if max_bid < current_price:
+                    max_bid_str += " *"
+                
+                # Truncate item title to 48 characters
+                item_title = listing['item_title']
+                if len(item_title) > 48:
+                    item_title = item_title[:45] + "..."
+                
+                url = listing['listing_url']
+                
+                rows.append((
+                    str(listing['id']),
+                    listing['status'],
+                    current_bid_str,
+                    max_bid_str,
+                    time_remaining,
+                    item_title,
+                    url
+                ))
+            return rows
+        
+        # Helper function to print a table
+        def print_table(title, listings):
+            if not listings:
+                return
+            
+            # Sort by Ends At (auction_end_time_utc) - ascending (earliest first)
+            sorted_listings = sorted(
+                listings,
+                key=lambda x: datetime.fromisoformat(x['auction_end_time_utc'].replace("Z", "+00:00"))
+            )
+            table_rows = build_table_rows(sorted_listings)
+            
+            # Calculate column widths
+            headers = ["ID", "Status", "Current Bid", "Max Bid", "Time Left", "Item", "URL"]
+            col_widths = [max(len(str(row[i])) for row in table_rows) if table_rows else 0 for i in range(len(headers))]
+            col_widths = [max(col_widths[i], len(headers[i])) for i in range(len(headers))]
+            
+            # Set minimum widths
+            min_widths = [4, 10, 12, 10, 10, 30, 30]
+            col_widths = [max(col_widths[i], min_widths[i]) for i in range(len(headers))]
+            
+            # Build table borders
+            def build_separator(left, middle, right, widths):
+                return left + middle.join("─" * (w + 2) for w in widths) + right
+            
+            top_border = build_separator("┌", "┬", "┐", col_widths)
+            bottom_border = build_separator("└", "┴", "┘", col_widths)
+            header_separator = build_separator("├", "┼", "┤", col_widths)
+            
+            # Print title
+            click.echo(f"\n{title}")
+            click.echo("=" * (sum(col_widths) + len(col_widths) * 3 + 1))
+            
+            # Print table
+            click.echo(top_border)
+            # Print header
+            header_row = "│ " + " │ ".join(f"{headers[i]:<{col_widths[i]}}" for i in range(len(headers))) + " │"
+            click.echo(header_row)
+            click.echo(header_separator)
+            
+            # Print data rows
+            for row in table_rows:
+                data_row = "│ " + " │ ".join(f"{str(row[i]):<{col_widths[i]}}" for i in range(len(row))) + " │"
+                click.echo(data_row)
+            
+            click.echo(bottom_border)
+        
+        # Print both tables
+        if not active_listings and not inactive_listings:
             click.echo("No listings found.")
             return
         
-        # Sort by Ends At (auction_end_time_utc) - ascending (earliest first)
-        filtered_listings = sorted(
-            filtered_listings, 
-            key=lambda x: datetime.fromisoformat(x['auction_end_time_utc'].replace("Z", "+00:00"))
-        )
+        # Print active listings first
+        print_table("Active Listings", active_listings)
         
-        # Prepare data for table
-        table_rows = []
-        for listing in filtered_listings:
-            # Format time remaining until auction ends
-            time_remaining = client.time_until_auction_end(listing['auction_end_time_utc'])
-            
-            # Convert prices to float for formatting (API returns as string)
-            current_price = float(listing['current_price']) if isinstance(listing['current_price'], str) else listing['current_price']
-            max_bid = float(listing['max_bid']) if isinstance(listing['max_bid'], str) else listing['max_bid']
-            
-            current_bid_str = f"${current_price:.2f}"
-            max_bid_str = f"${max_bid:.2f}"
-            # Add asterisk if max bid is lower than current bid
-            if max_bid < current_price:
-                max_bid_str += " *"
-            
-            # Truncate item title to 48 characters
-            item_title = listing['item_title']
-            if len(item_title) > 48:
-                item_title = item_title[:45] + "..."
-            
-            url = listing['listing_url']
-            
-            table_rows.append((
-                str(listing['id']),
-                listing['status'],
-                current_bid_str,
-                max_bid_str,
-                time_remaining,
-                item_title,
-                url
-            ))
-        
-        # Calculate column widths (header widths + data widths)
-        headers = ["ID", "Status", "Current Bid", "Max Bid", "Time Left", "Item", "URL"]
-        col_widths = [max(len(str(row[i])) for row in table_rows) if table_rows else 0 for i in range(len(headers))]
-        col_widths = [max(col_widths[i], len(headers[i])) for i in range(len(headers))]
-        
-        # Set minimum widths
-        min_widths = [4, 10, 12, 10, 10, 30, 30]
-        col_widths = [max(col_widths[i], min_widths[i]) for i in range(len(headers))]
-        
-        # Build table borders
-        def build_separator(left, middle, right, widths):
-            return left + middle.join("─" * (w + 2) for w in widths) + right
-        
-        top_border = build_separator("┌", "┬", "┐", col_widths)
-        bottom_border = build_separator("└", "┴", "┘", col_widths)
-        header_separator = build_separator("├", "┼", "┤", col_widths)
-        row_separator = build_separator("├", "┼", "┤", col_widths)
-        
-        # Print table
-        click.echo(top_border)
-        # Print header
-        header_row = "│ " + " │ ".join(f"{headers[i]:<{col_widths[i]}}" for i in range(len(headers))) + " │"
-        click.echo(header_row)
-        click.echo(header_separator)
-        
-        # Print data rows
-        for row in table_rows:
-            data_row = "│ " + " │ ".join(f"{str(row[i]):<{col_widths[i]}}" for i in range(len(row))) + " │"
-            click.echo(data_row)
-        
-        click.echo(bottom_border)
+        # Print inactive listings
+        print_table("Inactive Listings", inactive_listings)
     except Exception as e:
         click.echo(f"Failed to list listings: {e}", err=True)
         sys.exit(1)
