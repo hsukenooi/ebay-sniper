@@ -290,6 +290,23 @@ class Worker:
                 db.commit()
             return
         
+        # Cleanup: Handle Scheduled auctions that have already ended
+        # This can happen if the worker wasn't running when the auction ended
+        if auction.status == AuctionStatus.SCHEDULED.value:
+            if now >= auction.auction_end_time_utc:
+                auction.status = AuctionStatus.FAILED.value
+                if not db.query(BidAttempt).filter(BidAttempt.auction_id == auction.id).first():
+                    bid_attempt = BidAttempt(
+                        auction_id=auction.id,
+                        attempt_time_utc=now,
+                        result=BidResult.FAILED.value,
+                        error_message="Auction ended before worker could process it"
+                    )
+                    db.add(bid_attempt)
+                db.commit()
+                logger.info(f"Auction {auction.id} was still Scheduled after ending, marked as Failed")
+                return
+        
         # Pre-bid price check at T-60s
         if auction.status == AuctionStatus.SCHEDULED.value:
             time_until_pre_check = (pre_check_time - now).total_seconds()
