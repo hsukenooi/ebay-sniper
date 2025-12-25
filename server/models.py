@@ -23,6 +23,7 @@ class AuctionResponse(BaseModel):
     listing_number: str
     listing_url: str
     item_title: str
+    seller_name: Optional[str]
     current_price: Decimal
     max_bid: Decimal
     currency: str

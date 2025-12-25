@@ -248,6 +248,12 @@ class eBayClient:
         item_title = data.get("title", "Unknown Item")
         listing_url = data.get("itemWebUrl", f"https://www.ebay.com/itm/{listing_number}")
         
+        # Extract seller name (username if available, otherwise userId)
+        seller_name = None
+        seller_info = data.get("seller", {})
+        if seller_info:
+            seller_name = seller_info.get("username") or seller_info.get("userId")
+        
         # Extract listing type (validate it's an auction)
         listing_type = data.get("listingType", "")
         if listing_type and listing_type.upper() != "AUCTION":
@@ -259,6 +265,7 @@ class eBayClient:
         return {
             "listing_url": listing_url,
             "item_title": item_title,
+            "seller_name": seller_name,
             "current_price": current_price,
             "currency": currency,
             "auction_end_time_utc": auction_end_time_utc,

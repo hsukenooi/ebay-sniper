@@ -2,6 +2,25 @@
 
 This directory contains database migration scripts for updating the schema.
 
+## Migration: Add Seller Name Field
+
+This migration adds a new column to the `auctions` table:
+- `seller_name`: Stores the eBay seller's username or userId
+
+### Running the Migration
+
+**Using Railway CLI:**
+```bash
+railway run python migrations/migrate_add_seller_name.py
+```
+
+**Using Railway Dashboard SQL Editor:**
+```sql
+ALTER TABLE auctions ADD COLUMN IF NOT EXISTS seller_name VARCHAR;
+```
+
+---
+
 ## Migration: Add Outcome and Final Price Fields
 
 This migration adds two new columns to the `auctions` table:

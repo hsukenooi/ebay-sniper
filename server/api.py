@@ -50,6 +50,7 @@ def _refresh_auction_price(db: Session, auction: Auction):
         auction.currency = details["currency"]
         auction.listing_url = details["listing_url"]
         auction.item_title = details["item_title"]
+        auction.seller_name = details.get("seller_name")
         auction.auction_end_time_utc = details["auction_end_time_utc"]
         auction.last_price_refresh_utc = datetime.utcnow()
         db.commit()
@@ -113,6 +114,7 @@ def add_sniper(request: AddSniperRequest, db: Session = Depends(get_db), usernam
         listing_number=request.listing_number,
         listing_url=details["listing_url"],
         item_title=details["item_title"],
+        seller_name=details.get("seller_name"),
         current_price=details["current_price"],
         max_bid=request.max_bid,
         currency=details["currency"],

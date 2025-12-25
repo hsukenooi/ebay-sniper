@@ -34,6 +34,7 @@ class Auction(Base):
     listing_number = Column(String, nullable=False, index=True)
     listing_url = Column(String, nullable=False)
     item_title = Column(String, nullable=False)
+    seller_name = Column(String, nullable=True)
     current_price = Column(Numeric(10, 2), nullable=False)
     max_bid = Column(Numeric(10, 2), nullable=False)
     currency = Column(String(3), nullable=False, default="USD")
