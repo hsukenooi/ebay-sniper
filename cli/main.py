@@ -105,6 +105,9 @@ def list():
             
             current_bid_str = f"${current_price:.2f}"
             max_bid_str = f"${max_bid:.2f}"
+            # Add asterisk if max bid is lower than current bid
+            if max_bid < current_price:
+                max_bid_str += " *"
             
             # Truncate item title to 48 characters
             item_title = listing['item_title']
