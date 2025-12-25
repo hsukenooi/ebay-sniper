@@ -359,7 +359,7 @@ def list():
             table_rows = build_table_rows(sorted_listings)
             
             # Calculate column widths
-            headers = ["ID", "Status", "Current Bid", "Max Bid", "Time Left", "Item", "URL"]
+            headers = ["ID", "Status", "Current", "Max", "End", "Item", "URL"]
             col_widths = [max(len(str(row[i])) for row in table_rows) if table_rows else 0 for i in range(len(headers))]
             col_widths = [max(col_widths[i], len(headers[i])) for i in range(len(headers))]
             
