@@ -94,8 +94,13 @@ python3 -m cli auth
 # Add a listing
 python3 -m cli add 123456789012 150.00
 
-# Bulk add listings (reads from stdin)
+# Bulk add listings (reads from stdin until EOF)
+# Option 1: Pipe input
 echo -e "123456789012 150.00\n234567890123 200.00" | python3 -m cli add-bulk
+
+# Option 2: Paste and submit
+python3 -m cli add-bulk
+# Paste your listings (one per line), then press Ctrl+D (Unix/macOS) or Ctrl+Z+Enter (Windows) to submit
 
 # List all listings
 python3 -m cli list
