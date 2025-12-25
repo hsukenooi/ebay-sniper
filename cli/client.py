@@ -123,7 +123,8 @@ class SniperClient:
         """Calculate and format time remaining until auction ends.
         
         Returns:
-            - Hours (e.g., "5h") if less than 36 hours remaining
+            - Minutes (e.g., "45m") if less than 1 hour remaining
+            - Hours (e.g., "5h") if 1-36 hours remaining
             - Days (e.g., "3d") if 36 hours or more remaining
             - "Ended" if the auction has already ended
         """
@@ -142,11 +143,16 @@ class SniperClient:
         if time_diff.total_seconds() <= 0:
             return "Ended"
         
-        # Calculate total hours
-        total_hours = time_diff.total_seconds() / 3600
+        # Calculate total seconds
+        total_seconds = time_diff.total_seconds()
+        total_minutes = total_seconds / 60
+        total_hours = total_seconds / 3600
         
-        # Show hours if less than 36 hours, otherwise show days
-        if total_hours < 36:
+        # Show minutes if less than 1 hour, hours if 1-36 hours, otherwise show days
+        if total_hours < 1:
+            minutes = int(total_minutes)
+            return f"{minutes}m"
+        elif total_hours < 36:
             hours = int(total_hours)
             return f"{hours}h"
         else:
