@@ -424,6 +424,133 @@ class eBayClient:
                 "error_message": f"Failed to parse XML response: {e}"
             }
     
+    def get_final_price_from_trading_api(self, listing_number: str) -> Optional[Decimal]:
+        """
+        Get final price for an ended auction using Trading API GetItem.
+        This works even if we didn't bid on the auction.
+        
+        Returns final price as Decimal, or None if not available or auction hasn't ended.
+        """
+        try:
+            self._ensure_token_valid(use_user_token=True)  # Trading API requires User token
+            
+            # eBay Trading API - GetItem requires XML
+            url = f"{self.base_url}/ws/api.dll"
+            
+            user_token = self.oauth_user_token
+            if not user_token:
+                logger.warning("User OAuth token not set, cannot get final price from Trading API")
+                return None
+            
+            # Escape XML special characters
+            def escape_xml(value):
+                return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            
+            # GetItem request to get auction details including current price
+            xml_payload = f"""<?xml version="1.0" encoding="utf-8"?>
+<GetItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+    <RequesterCredentials>
+        <eBayAuthToken>{escape_xml(user_token)}</eBayAuthToken>
+    </RequesterCredentials>
+    <DetailLevel>ReturnAll</DetailLevel>
+    <Version>1247</Version>
+    <ItemID>{escape_xml(listing_number)}</ItemID>
+    <SiteID>0</SiteID>
+</GetItemRequest>"""
+            
+            headers = {
+                "X-EBAY-SOA-OPERATION-NAME": "GetItem",
+                "X-EBAY-SOA-SERVICE-VERSION": "1247",
+                "X-EBAY-SOA-SECURITY-APPNAME": self.app_id,
+                "Content-Type": "text/xml",
+            }
+            
+            response = requests.post(url, headers=headers, data=xml_payload, timeout=5)
+            
+            # Handle 401 errors by attempting token refresh
+            if response.status_code == 401:
+                logger.warning("Received 401 error getting final price, attempting token refresh...")
+                if self.refresh_user_token():
+                    user_token = self.oauth_user_token
+                    xml_payload = f"""<?xml version="1.0" encoding="utf-8"?>
+<GetItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+    <RequesterCredentials>
+        <eBayAuthToken>{escape_xml(user_token)}</eBayAuthToken>
+    </RequesterCredentials>
+    <DetailLevel>ReturnAll</DetailLevel>
+    <Version>1247</Version>
+    <ItemID>{escape_xml(listing_number)}</ItemID>
+    <SiteID>0</SiteID>
+</GetItemRequest>"""
+                    response = requests.post(url, headers=headers, data=xml_payload, timeout=5)
+            
+            if response.status_code == 404:
+                logger.info(f"Listing {listing_number} not found in Trading API")
+                return None
+            
+            response.raise_for_status()
+            
+            # Parse XML response
+            root = ET.fromstring(response.text)
+            namespace = "{urn:ebay:apis:eBLBaseComponents}"
+            
+            # Check for errors
+            ack_elem = root.find(f".//{namespace}Ack")
+            ack = ack_elem.text if ack_elem is not None else None
+            
+            if ack != "Success":
+                # Check for error messages
+                errors = root.findall(f".//{namespace}Errors")
+                if errors:
+                    error_code_elem = errors[0].find(f".//{namespace}ErrorCode")
+                    error_msg_elem = errors[0].find(f".//{namespace}LongMessage")
+                    error_code = error_code_elem.text if error_code_elem is not None else "UNKNOWN"
+                    error_msg = error_msg_elem.text if error_msg_elem is not None else "Unknown error"
+                    logger.warning(f"Trading API GetItem error {error_code}: {error_msg}")
+                return None
+            
+            # Check if auction has ended
+            listing_status_elem = root.find(f".//{namespace}ListingStatus")
+            listing_status = listing_status_elem.text if listing_status_elem is not None else None
+            
+            # Get end time
+            end_time_elem = root.find(f".//{namespace}EndTime")
+            if end_time_elem is not None and end_time_elem.text:
+                end_time_str = end_time_elem.text
+                # eBay returns time in ISO format like "2025-12-25T12:00:00.000Z"
+                end_time = datetime.fromisoformat(end_time_str.replace("Z", "+00:00")).replace(tzinfo=None)
+                now = datetime.utcnow()
+                if now < end_time:
+                    # Auction hasn't ended yet
+                    return None
+            
+            # Get current price (which should be final price if auction ended)
+            # Look for CurrentPrice element
+            current_price_elem = root.find(f".//{namespace}CurrentPrice")
+            if current_price_elem is not None:
+                price_value = current_price_elem.text
+                if price_value:
+                    return Decimal(str(price_value))
+            
+            # Fallback: try SellingStatus/CurrentPrice
+            selling_status = root.find(f".//{namespace}SellingStatus")
+            if selling_status is not None:
+                current_price_elem = selling_status.find(f".//{namespace}CurrentPrice")
+                if current_price_elem is not None:
+                    price_value = current_price_elem.text
+                    if price_value:
+                        return Decimal(str(price_value))
+            
+            logger.warning(f"Could not find current price in Trading API response for {listing_number}")
+            return None
+            
+        except ET.ParseError as e:
+            logger.warning(f"Failed to parse Trading API XML response for {listing_number}: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"Could not get final price from Trading API for {listing_number}: {e}")
+            return None
+    
     def place_bid(self, listing_number: str, bid_amount: Decimal) -> Dict[str, Any]:
         """
         Place a bid on an auction.
@@ -546,6 +673,75 @@ class eBayClient:
         except Exception as e:
             logger.error(f"Unexpected error placing bid: {e}")
             raise
+    
+    def get_final_price_from_browse_api(self, listing_number: str) -> Optional[Decimal]:
+        """
+        Get final price for an ended auction using Browse API.
+        This works even if we didn't bid on the auction.
+        
+        Returns final price as Decimal, or None if not available or auction hasn't ended.
+        """
+        try:
+            self._ensure_token_valid(use_user_token=False)  # Browse API can use app token
+            
+            # Try getItemByLegacyId first (more reliable for ended auctions)
+            url = f"{self.base_url}/buy/browse/v1/item/get_item_by_legacy_id"
+            params = {
+                "legacy_item_id": listing_number,
+                "fieldgroups": "FULL"
+            }
+            
+            headers = self._get_headers(use_user_token=False)
+            if self.marketplace_id:
+                headers["X-EBAY-C-MARKETPLACE-ID"] = self.marketplace_id
+            
+            response = requests.get(url, params=params, headers=headers, timeout=5)
+            
+            if response.status_code == 404:
+                # Try standard Browse API endpoint as fallback
+                url = f"{self.base_url}/buy/browse/v1/item/{listing_number}"
+                params = {"fieldgroups": "FULL"}
+                response = requests.get(url, params=params, headers=headers, timeout=5)
+            
+            if response.status_code == 404:
+                logger.info(f"Listing {listing_number} not found in Browse API")
+                return None
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            # Check if auction has ended
+            item_end_date = data.get("itemEndDate")
+            if item_end_date:
+                # Parse end date and check if auction has ended
+                # Use same pattern as _parse_browse_api_response - convert to naive UTC
+                end_time = datetime.fromisoformat(item_end_date.replace("Z", "+00:00")).replace(tzinfo=None)
+                now = datetime.utcnow()
+                if now < end_time:
+                    # Auction hasn't ended yet
+                    return None
+            
+            # Get current price (which should be final price if auction ended)
+            price_info = data.get("price", {})
+            if price_info:
+                value = price_info.get("value")
+                if value:
+                    return Decimal(str(value))
+            
+            # Try priceDisplay field as fallback
+            price_display = data.get("priceDisplay")
+            if price_display:
+                # Extract numeric value from display string like "$150.00"
+                import re
+                match = re.search(r'[\d.]+', price_display.replace(',', ''))
+                if match:
+                    return Decimal(match.group())
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Could not get final price from Browse API for {listing_number}: {e}")
+            return None
     
     def get_auction_outcome(self, listing_number: str) -> Dict[str, Any]:
         """

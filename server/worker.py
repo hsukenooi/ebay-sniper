@@ -197,18 +197,18 @@ class Worker:
         return False
     
     def _check_auction_outcomes(self, db: Session):
-        """Check outcomes for auctions that have ended and had bids placed."""
+        """Check outcomes and final prices for auctions that have ended."""
         try:
-            # Find auctions that ended (auction_end_time_utc < now) and have BidPlaced status
-            # but don't have an outcome yet (outcome is Pending)
             now = datetime.utcnow()
-            ended_auctions = db.query(Auction).filter(
+            
+            # Find auctions that ended and have BidPlaced status but don't have an outcome yet
+            bid_placed_auctions = db.query(Auction).filter(
                 Auction.status == AuctionStatus.BID_PLACED.value,
                 Auction.auction_end_time_utc < now,
                 Auction.outcome == AuctionOutcome.PENDING.value
             ).all()
             
-            for auction in ended_auctions:
+            for auction in bid_placed_auctions:
                 try:
                     # Wait a bit after auction ends for eBay to update
                     # Check if at least 30 seconds have passed since auction ended
@@ -229,6 +229,34 @@ class Worker:
                     logger.error(f"Error checking outcome for auction {auction.id}: {e}", exc_info=True)
                     db.rollback()
                     # Don't fail the entire loop, continue with other auctions
+                    continue
+            
+            # Also try to get final price for ended auctions that don't have it yet
+            # (e.g., FAILED auctions where we want to know what the final price was)
+            auctions_needing_final_price = db.query(Auction).filter(
+                Auction.auction_end_time_utc < now,
+                Auction.final_price.is_(None),
+                Auction.outcome == AuctionOutcome.PENDING.value
+            ).all()
+            
+            for auction in auctions_needing_final_price:
+                try:
+                    # Wait at least 30 seconds after auction ends
+                    time_since_end = (now - auction.auction_end_time_utc).total_seconds()
+                    if time_since_end < 30:
+                        continue
+                    
+                    # Try to get final price from Trading API GetItem (works even if we didn't bid)
+                    final_price = self.ebay_client.get_final_price_from_trading_api(auction.listing_number)
+                    
+                    if final_price:
+                        auction.final_price = final_price
+                        db.commit()
+                        logger.info(f"Retrieved final price ${final_price} for auction {auction.id} from Trading API")
+                    
+                except Exception as e:
+                    logger.error(f"Error getting final price for auction {auction.id}: {e}", exc_info=True)
+                    db.rollback()
                     continue
                     
         except Exception as e:
