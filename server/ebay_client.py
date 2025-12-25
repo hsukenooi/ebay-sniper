@@ -546,4 +546,85 @@ class eBayClient:
         except Exception as e:
             logger.error(f"Unexpected error placing bid: {e}")
             raise
+    
+    def get_auction_outcome(self, listing_number: str) -> Dict[str, Any]:
+        """
+        Check auction outcome using Offer API getBidding endpoint.
+        
+        Returns dict with:
+        - outcome: "Won", "Lost", or "Pending" (if auction hasn't ended)
+        - final_price: Final winning bid amount (None if pending)
+        - auction_status: eBay's auction status (e.g., "ENDED", "ACTIVE")
+        """
+        try:
+            self._ensure_token_valid(use_user_token=True)  # Need User token for Offer API
+            
+            # Offer API getBidding endpoint
+            url = f"{self.base_url}/buy/offer/v1/bidding/{listing_number}"
+            
+            headers = self._get_headers(use_user_token=True)
+            # Offer API requires marketplace ID header
+            if self.marketplace_id:
+                headers["X-EBAY-C-MARKETPLACE-ID"] = self.marketplace_id
+            
+            response = requests.get(url, headers=headers, timeout=5)
+            
+            # Handle 401 errors by attempting token refresh
+            if response.status_code == 401:
+                logger.warning("Received 401 error checking auction outcome, attempting token refresh...")
+                if self.refresh_user_token():
+                    headers = self._get_headers(use_user_token=True)
+                    if self.marketplace_id:
+                        headers["X-EBAY-C-MARKETPLACE-ID"] = self.marketplace_id
+                    response = requests.get(url, headers=headers, timeout=5)
+            
+            if response.status_code == 404:
+                # Auction not found or user didn't bid on it
+                return {
+                    "outcome": "Pending",
+                    "final_price": None,
+                    "auction_status": "UNKNOWN"
+                }
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            # Parse response
+            auction_status = data.get("auctionStatus", "UNKNOWN")
+            is_high_bidder = data.get("highBidder", False)
+            current_price = data.get("currentPrice", {})
+            final_price_value = current_price.get("value") if current_price else None
+            
+            # Determine outcome
+            if auction_status == "ENDED":
+                if is_high_bidder:
+                    outcome = "Won"
+                else:
+                    outcome = "Lost"
+                final_price = Decimal(str(final_price_value)) if final_price_value else None
+            else:
+                # Auction still active
+                outcome = "Pending"
+                final_price = None
+            
+            return {
+                "outcome": outcome,
+                "final_price": final_price,
+                "auction_status": auction_status
+            }
+            
+        except requests.exceptions.HTTPError as e:
+            if e.response and e.response.status_code == 404:
+                # User didn't bid on this auction or it doesn't exist
+                logger.info(f"Could not find bidding info for auction {listing_number}")
+                return {
+                    "outcome": "Pending",
+                    "final_price": None,
+                    "auction_status": "UNKNOWN"
+                }
+            logger.error(f"Error checking auction outcome for {listing_number}: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error checking auction outcome: {e}")
+            raise
 

@@ -30,6 +30,8 @@ class AuctionResponse(BaseModel):
     last_price_refresh_utc: Optional[datetime]
     status: str
     skip_reason: Optional[str]
+    outcome: Optional[str]
+    final_price: Optional[Decimal]
     
     model_config = {"from_attributes": True}
 

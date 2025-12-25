@@ -90,9 +90,9 @@ def list():
             key=lambda x: datetime.fromisoformat(x['auction_end_time_utc'].replace("Z", "+00:00"))
         )
         
-        # Print header: ID, Status, Current Bid, Max Bid, Time Remaining, Item, URL
-        click.echo(f"{'ID':<4}  {'Status':<12}  {'Current Bid':<12}  {'Max Bid':<10}  {'Time Left':<12}  {'Item':<48}  {'URL':<40}")
-        click.echo("-" * 140)
+        # Print header: ID, Status, Current Bid, Max Bid, Time Left, Outcome, Final Price, Item, URL
+        click.echo(f"{'ID':<4}  {'Status':<12}  {'Current Bid':<12}  {'Max Bid':<10}  {'Time Left':<12}  {'Outcome':<8}  {'Final':<10}  {'Item':<48}  {'URL':<40}")
+               click.echo("-" * 160)
         
         # Print rows
         for listing in filtered_listings:
@@ -116,9 +116,28 @@ def list():
             
             url = listing['listing_url']
             
+            # Format outcome
+            outcome = listing.get('outcome', 'Pending')
+            if outcome == 'Pending':
+                outcome_str = ''
+            elif outcome == 'Won':
+                outcome_str = 'Won'
+            elif outcome == 'Lost':
+                outcome_str = 'Lost'
+            else:
+                outcome_str = outcome
+            
+            # Format final price
+            final_price = listing.get('final_price')
+            if final_price:
+                final_price_float = float(final_price) if isinstance(final_price, str) else final_price
+                final_price_str = f"${final_price_float:.2f}"
+            else:
+                final_price_str = ''
+            
             click.echo(
                 f"{listing['id']:<4}  {listing['status']:<12}  {current_bid_str:<12}  {max_bid_str:<10}  "
-                f"{time_remaining:<12}  {item_title:<48}  {url:<40}"
+                f"{time_remaining:<12}  {outcome_str:<8}  {final_price_str:<10}  {item_title:<48}  {url:<40}"
             )
     except Exception as e:
         click.echo(f"Failed to list listings: {e}", err=True)
@@ -146,6 +165,16 @@ def status(auction_id):
             click.echo(f"Max bid: ${max_bid:.2f}")
             click.echo(f"Current price: ${current_price:.2f}")
             click.echo(f"Ends at: {client.to_local_time(listing['auction_end_time_utc'])}")
+            
+            # Show outcome and final price if available
+            outcome = listing.get('outcome')
+            if outcome and outcome != 'Pending':
+                click.echo(f"Outcome: {outcome}")
+                final_price = listing.get('final_price')
+                if final_price:
+                    final_price_float = float(final_price) if isinstance(final_price, str) else final_price
+                    click.echo(f"Final price: ${final_price_float:.2f}")
+            
             click.echo(f"URL: {listing['listing_url']}")
     except Exception as e:
         click.echo(f"Failed to get status: {e}", err=True)

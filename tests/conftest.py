@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from database.models import Base, Auction, BidAttempt, AuctionStatus, BidResult
+from database.models import Base, Auction, BidAttempt, AuctionStatus, BidResult, AuctionOutcome
 import jwt
 
 # Use file-based SQLite for testing (more reliable than :memory:)
@@ -103,6 +103,7 @@ def sample_auction(db_session):
         auction_end_time_utc=datetime.utcnow() + timedelta(hours=1),
         last_price_refresh_utc=datetime.utcnow(),
         status=AuctionStatus.SCHEDULED.value,
+        outcome=AuctionOutcome.PENDING.value,
     )
     db_session.add(auction)
     db_session.commit()

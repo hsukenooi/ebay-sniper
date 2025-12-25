@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timedelta
 from decimal import Decimal
 from sqlalchemy.orm import Session
-from database import SessionLocal, Auction, BidAttempt, AuctionStatus, BidResult
+from database import SessionLocal, Auction, BidAttempt, AuctionStatus, BidResult, AuctionOutcome
 from .ebay_client import eBayClient
 import requests
 
@@ -196,6 +196,44 @@ class Worker:
         db.commit()
         return False
     
+    def _check_auction_outcomes(self, db: Session):
+        """Check outcomes for auctions that have ended and had bids placed."""
+        try:
+            # Find auctions that ended (auction_end_time_utc < now) and have BidPlaced status
+            # but don't have an outcome yet (outcome is Pending)
+            now = datetime.utcnow()
+            ended_auctions = db.query(Auction).filter(
+                Auction.status == AuctionStatus.BID_PLACED.value,
+                Auction.auction_end_time_utc < now,
+                Auction.outcome == AuctionOutcome.PENDING.value
+            ).all()
+            
+            for auction in ended_auctions:
+                try:
+                    # Wait a bit after auction ends for eBay to update
+                    # Check if at least 30 seconds have passed since auction ended
+                    time_since_end = (now - auction.auction_end_time_utc).total_seconds()
+                    if time_since_end < 30:
+                        continue  # Too soon, eBay might not have updated yet
+                    
+                    outcome_data = self.ebay_client.get_auction_outcome(auction.listing_number)
+                    
+                    auction.outcome = outcome_data["outcome"]
+                    if outcome_data["final_price"]:
+                        auction.final_price = outcome_data["final_price"]
+                    
+                    db.commit()
+                    logger.info(f"Auction {auction.id} outcome: {outcome_data['outcome']}, final price: {outcome_data['final_price']}")
+                    
+                except Exception as e:
+                    logger.error(f"Error checking outcome for auction {auction.id}: {e}")
+                    # Don't fail the entire loop, continue with other auctions
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"Error in _check_auction_outcomes: {e}")
+            # Don't fail the worker loop
+    
     def _process_auction(self, db: Session, auction: Auction):
         """Process a single auction according to its timing."""
         now = datetime.utcnow()
@@ -262,6 +300,9 @@ class Worker:
                     db.commit()
                 finally:
                     db.close()
+                
+                # Check outcomes for ended auctions with BidPlaced status
+                self._check_auction_outcomes(db)
                 
                 # Sleep briefly before next iteration
                 time.sleep(0.5)  # Check every 500ms

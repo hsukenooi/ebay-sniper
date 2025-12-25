@@ -534,3 +534,142 @@ def test_place_bid_401_refresh_retry(mock_post):
         assert result["success"] is True
         assert mock_post.call_count == 2  # Initial call + retry after refresh
 
+
+@patch("server.ebay_client.requests.get")
+def test_get_auction_outcome_won(mock_get):
+    """Test checking auction outcome when auction was won."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "auctionStatus": "ENDED",
+        "highBidder": True,
+        "currentPrice": {
+            "value": "125.50",
+            "currency": "USD"
+        }
+    }
+    mock_response.raise_for_status = MagicMock()
+    mock_get.return_value = mock_response
+    
+    client = eBayClient()
+    client.oauth_user_token = "test_token"
+    client.oauth_user_token_expires_at = datetime.utcnow() + timedelta(hours=1)
+    client.marketplace_id = "EBAY_US"
+    
+    outcome = client.get_auction_outcome("123456789")
+    
+    assert outcome["outcome"] == "Won"
+    assert outcome["final_price"] == Decimal("125.50")
+    assert outcome["auction_status"] == "ENDED"
+    mock_get.assert_called_once()
+
+
+@patch("server.ebay_client.requests.get")
+def test_get_auction_outcome_lost(mock_get):
+    """Test checking auction outcome when auction was lost."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "auctionStatus": "ENDED",
+        "highBidder": False,
+        "currentPrice": {
+            "value": "150.00",
+            "currency": "USD"
+        }
+    }
+    mock_response.raise_for_status = MagicMock()
+    mock_get.return_value = mock_response
+    
+    client = eBayClient()
+    client.oauth_user_token = "test_token"
+    client.oauth_user_token_expires_at = datetime.utcnow() + timedelta(hours=1)
+    client.marketplace_id = "EBAY_US"
+    
+    outcome = client.get_auction_outcome("123456789")
+    
+    assert outcome["outcome"] == "Lost"
+    assert outcome["final_price"] == Decimal("150.00")
+    assert outcome["auction_status"] == "ENDED"
+
+
+@patch("server.ebay_client.requests.get")
+def test_get_auction_outcome_pending(mock_get):
+    """Test checking auction outcome when auction is still active."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "auctionStatus": "ACTIVE",
+        "highBidder": True,
+        "currentPrice": {
+            "value": "100.00",
+            "currency": "USD"
+        }
+    }
+    mock_response.raise_for_status = MagicMock()
+    mock_get.return_value = mock_response
+    
+    client = eBayClient()
+    client.oauth_user_token = "test_token"
+    client.oauth_user_token_expires_at = datetime.utcnow() + timedelta(hours=1)
+    client.marketplace_id = "EBAY_US"
+    
+    outcome = client.get_auction_outcome("123456789")
+    
+    assert outcome["outcome"] == "Pending"
+    assert outcome["final_price"] is None
+    assert outcome["auction_status"] == "ACTIVE"
+
+
+@patch("server.ebay_client.requests.get")
+def test_get_auction_outcome_not_found(mock_get):
+    """Test checking auction outcome when auction is not found."""
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_get.return_value = mock_response
+    mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+        response=mock_response
+    )
+    
+    client = eBayClient()
+    client.oauth_user_token = "test_token"
+    client.oauth_user_token_expires_at = datetime.utcnow() + timedelta(hours=1)
+    client.marketplace_id = "EBAY_US"
+    
+    outcome = client.get_auction_outcome("123456789")
+    
+    assert outcome["outcome"] == "Pending"
+    assert outcome["final_price"] is None
+    assert outcome["auction_status"] == "UNKNOWN"
+
+
+@patch("server.ebay_client.requests.get")
+def test_get_auction_outcome_401_refresh(mock_get):
+    """Test checking auction outcome with 401 error triggers token refresh."""
+    # First call returns 401, second call succeeds after refresh
+    mock_response_401 = MagicMock()
+    mock_response_401.status_code = 401
+    
+    mock_response_success = MagicMock()
+    mock_response_success.json.return_value = {
+        "auctionStatus": "ENDED",
+        "highBidder": True,
+        "currentPrice": {
+            "value": "125.50",
+            "currency": "USD"
+        }
+    }
+    mock_response_success.raise_for_status = MagicMock()
+    
+    mock_get.side_effect = [mock_response_401, mock_response_success]
+    
+    client = eBayClient()
+    client.oauth_user_token = "test_token"
+    client.oauth_user_token_expires_at = datetime.utcnow() + timedelta(hours=1)
+    client.marketplace_id = "EBAY_US"
+    
+    # Mock refresh to succeed
+    with patch.object(client, "refresh_user_token", return_value=True):
+        outcome = client.get_auction_outcome("123456789")
+    
+    assert outcome["outcome"] == "Won"
+    assert outcome["final_price"] == Decimal("125.50")
+    # Should have been called twice (initial + retry after refresh)
+    assert mock_get.call_count == 2
+

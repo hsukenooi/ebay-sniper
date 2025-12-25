@@ -7,7 +7,7 @@ import jwt
 import os
 import requests
 from dotenv import load_dotenv
-from database import get_db, Auction, BidAttempt, AuctionStatus, BidResult, SessionLocal
+from database import get_db, Auction, BidAttempt, AuctionStatus, BidResult, AuctionOutcome, SessionLocal
 from .models import AuthRequest, AuthResponse, AddSniperRequest, AuctionResponse, BidAttemptResponse
 from .ebay_client import eBayClient
 import logging
@@ -119,6 +119,7 @@ def add_sniper(request: AddSniperRequest, db: Session = Depends(get_db), usernam
         auction_end_time_utc=details["auction_end_time_utc"],
         last_price_refresh_utc=datetime.utcnow(),
         status=AuctionStatus.SCHEDULED.value,
+        outcome=AuctionOutcome.PENDING.value,
     )
     
     db.add(auction)

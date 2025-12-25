@@ -10,7 +10,7 @@ import os
 os.environ["SECRET_KEY"] = "test-secret-key"
 
 from server.api import app
-from database.models import AuctionStatus
+from database.models import AuctionStatus, AuctionOutcome
 
 
 def test_auth_endpoint(client):
@@ -51,6 +51,8 @@ def test_add_sniper_success(mock_get_details, client, auth_headers, db_session):
     assert data["listing_number"] == "123456789"
     assert float(data["max_bid"]) == 150.0
     assert data["status"] == AuctionStatus.SCHEDULED.value
+    assert data["outcome"] == AuctionOutcome.PENDING.value
+    assert data.get("final_price") is None
 
 
 @patch("server.api.ebay_client")
@@ -86,6 +88,8 @@ def test_list_snipers_with_data(client, auth_headers, db_session, sample_auction
     data = response.json()
     assert len(data) == 1
     assert data[0]["id"] == sample_auction.id
+    assert "outcome" in data[0]
+    assert "final_price" in data[0]
 
 
 def test_get_status_without_auth(client):
@@ -107,6 +111,8 @@ def test_get_status_success(client, auth_headers, db_session, sample_auction):
     data = response.json()
     assert data["id"] == sample_auction.id
     assert data["status"] == sample_auction.status
+    assert "outcome" in data
+    assert "final_price" in data
 
 
 def test_remove_sniper_without_auth(client):

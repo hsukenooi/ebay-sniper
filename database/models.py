@@ -16,6 +16,12 @@ class AuctionStatus(str, Enum):
     SKIPPED = "Skipped"
 
 
+class AuctionOutcome(str, Enum):
+    PENDING = "Pending"
+    WON = "Won"
+    LOST = "Lost"
+
+
 class BidResult(str, Enum):
     SUCCESS = "success"
     FAILED = "failed"
@@ -35,6 +41,8 @@ class Auction(Base):
     last_price_refresh_utc = Column(DateTime, nullable=True)
     status = Column(String, nullable=False, default=AuctionStatus.SCHEDULED.value, index=True)
     skip_reason = Column(Text, nullable=True)
+    outcome = Column(String, nullable=True, default=AuctionOutcome.PENDING.value, index=True)
+    final_price = Column(Numeric(10, 2), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 

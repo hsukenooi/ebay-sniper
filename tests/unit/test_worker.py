@@ -5,7 +5,7 @@ from decimal import Decimal
 from freezegun import freeze_time
 
 from server.worker import Worker, BID_OFFSET_SECONDS, PRE_BID_CHECK_SECONDS
-from database.models import AuctionStatus, BidResult, BidAttempt
+from database.models import Auction, AuctionStatus, BidResult, BidAttempt, AuctionOutcome
 
 
 def test_pre_bid_price_check_skip(db_session, sample_auction):
@@ -128,6 +128,165 @@ def test_execute_bid_failure(db_session, sample_auction):
         bid_attempt = db_session.query(BidAttempt).filter_by(auction_id=sample_auction.id).first()
         assert bid_attempt is not None
         assert bid_attempt.result == BidResult.FAILED.value
+
+
+def test_check_auction_outcomes_won(db_session, sample_auction):
+    """Test checking auction outcome when auction was won."""
+    worker = Worker()
+    
+    # Set auction to BidPlaced and ended
+    sample_auction.status = AuctionStatus.BID_PLACED.value
+    sample_auction.auction_end_time_utc = datetime.utcnow() - timedelta(minutes=1)
+    sample_auction.outcome = AuctionOutcome.PENDING.value
+    db_session.commit()
+    
+    # Mock eBay client to return won outcome
+    with patch.object(worker.ebay_client, "get_auction_outcome") as mock_outcome:
+        mock_outcome.return_value = {
+            "outcome": "Won",
+            "final_price": Decimal("125.50"),
+            "auction_status": "ENDED"
+        }
+        
+        with freeze_time(datetime.utcnow()):
+            worker._check_auction_outcomes(db_session)
+        
+        db_session.refresh(sample_auction)
+        assert sample_auction.outcome == "Won"
+        assert sample_auction.final_price == Decimal("125.50")
+
+
+def test_check_auction_outcomes_lost(db_session, sample_auction):
+    """Test checking auction outcome when auction was lost."""
+    worker = Worker()
+    
+    # Set auction to BidPlaced and ended
+    sample_auction.status = AuctionStatus.BID_PLACED.value
+    sample_auction.auction_end_time_utc = datetime.utcnow() - timedelta(minutes=1)
+    sample_auction.outcome = AuctionOutcome.PENDING.value
+    db_session.commit()
+    
+    # Mock eBay client to return lost outcome
+    with patch.object(worker.ebay_client, "get_auction_outcome") as mock_outcome:
+        mock_outcome.return_value = {
+            "outcome": "Lost",
+            "final_price": Decimal("150.00"),
+            "auction_status": "ENDED"
+        }
+        
+        with freeze_time(datetime.utcnow()):
+            worker._check_auction_outcomes(db_session)
+        
+        db_session.refresh(sample_auction)
+        assert sample_auction.outcome == "Lost"
+        assert sample_auction.final_price == Decimal("150.00")
+
+
+def test_check_auction_outcomes_too_soon(db_session, sample_auction):
+    """Test that outcome check doesn't happen too soon after auction ends."""
+    worker = Worker()
+    
+    # Set auction to BidPlaced and just ended (less than 30 seconds ago)
+    sample_auction.status = AuctionStatus.BID_PLACED.value
+    sample_auction.auction_end_time_utc = datetime.utcnow() - timedelta(seconds=10)
+    sample_auction.outcome = AuctionOutcome.PENDING.value
+    db_session.commit()
+    
+    # Mock eBay client (should not be called)
+    with patch.object(worker.ebay_client, "get_auction_outcome") as mock_outcome:
+        with freeze_time(datetime.utcnow()):
+            worker._check_auction_outcomes(db_session)
+        
+        # Should not have been called since it's too soon
+        mock_outcome.assert_not_called()
+        db_session.refresh(sample_auction)
+        assert sample_auction.outcome == AuctionOutcome.PENDING.value
+
+
+def test_check_auction_outcomes_only_bid_placed(db_session, sample_auction):
+    """Test that only BidPlaced auctions with Pending outcome are checked."""
+    worker = Worker()
+    
+    # Create multiple auctions with different statuses
+    auction1 = Auction(
+        listing_number="111111111",
+        listing_url="https://www.ebay.com/itm/111111111",
+        item_title="Test Item 1",
+        current_price=Decimal("100.00"),
+        max_bid=Decimal("150.00"),
+        currency="USD",
+        auction_end_time_utc=datetime.utcnow() - timedelta(minutes=1),
+        status=AuctionStatus.BID_PLACED.value,
+        outcome=AuctionOutcome.PENDING.value,
+    )
+    
+    auction2 = Auction(
+        listing_number="222222222",
+        listing_url="https://www.ebay.com/itm/222222222",
+        item_title="Test Item 2",
+        current_price=Decimal("100.00"),
+        max_bid=Decimal("150.00"),
+        currency="USD",
+        auction_end_time_utc=datetime.utcnow() - timedelta(minutes=1),
+        status=AuctionStatus.FAILED.value,  # Different status
+        outcome=AuctionOutcome.PENDING.value,
+    )
+    
+    auction3 = Auction(
+        listing_number="333333333",
+        listing_url="https://www.ebay.com/itm/333333333",
+        item_title="Test Item 3",
+        current_price=Decimal("100.00"),
+        max_bid=Decimal("150.00"),
+        currency="USD",
+        auction_end_time_utc=datetime.utcnow() - timedelta(minutes=1),
+        status=AuctionStatus.BID_PLACED.value,
+        outcome="Won",  # Already has outcome
+    )
+    
+    db_session.add_all([auction1, auction2, auction3])
+    db_session.commit()
+    
+    # Mock eBay client (should only be called for auction1)
+    with patch.object(worker.ebay_client, "get_auction_outcome") as mock_outcome:
+        mock_outcome.return_value = {
+            "outcome": "Won",
+            "final_price": Decimal("125.50"),
+            "auction_status": "ENDED"
+        }
+        
+        with freeze_time(datetime.utcnow()):
+            worker._check_auction_outcomes(db_session)
+        
+        # Should only be called once (for auction1)
+        assert mock_outcome.call_count == 1
+        assert mock_outcome.call_args[0][0] == "111111111"
+        
+        db_session.refresh(auction1)
+        assert auction1.outcome == "Won"
+
+
+def test_check_auction_outcomes_handles_error(db_session, sample_auction):
+    """Test that errors in outcome checking don't fail the entire operation."""
+    worker = Worker()
+    
+    # Set auction to BidPlaced and ended
+    sample_auction.status = AuctionStatus.BID_PLACED.value
+    sample_auction.auction_end_time_utc = datetime.utcnow() - timedelta(minutes=1)
+    sample_auction.outcome = AuctionOutcome.PENDING.value
+    db_session.commit()
+    
+    # Mock eBay client to raise an error
+    with patch.object(worker.ebay_client, "get_auction_outcome") as mock_outcome:
+        mock_outcome.side_effect = Exception("API Error")
+        
+        # Should not raise, just log and continue
+        with freeze_time(datetime.utcnow()):
+            worker._check_auction_outcomes(db_session)  # Should not raise
+        
+        db_session.refresh(sample_auction)
+        # Outcome should still be Pending since check failed
+        assert sample_auction.outcome == AuctionOutcome.PENDING.value
 
 
 def test_execute_bid_timeout_retry(db_session, sample_auction):
