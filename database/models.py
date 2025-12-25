@@ -39,7 +39,7 @@ class Auction(Base):
     max_bid = Column(Numeric(10, 2), nullable=False)
     currency = Column(String(3), nullable=False, default="USD")
     auction_end_time_utc = Column(DateTime, nullable=False, index=True)
-    last_price_refresh_utc = Column(DateTime, nullable=True)
+    last_price_refresh_utc = Column(DateTime, nullable=True, index=True)  # Added index for refresh-on-read queries
     status = Column(String, nullable=False, default=AuctionStatus.SCHEDULED.value, index=True)
     skip_reason = Column(Text, nullable=True)
     outcome = Column(String, nullable=True, default=AuctionOutcome.PENDING.value, index=True)
