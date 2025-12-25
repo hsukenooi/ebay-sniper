@@ -147,7 +147,6 @@ def list():
             
             # Print title
             click.echo(f"\n{title}")
-            click.echo("=" * (sum(col_widths) + len(col_widths) * 3 + 1))
             
             # Print table
             click.echo(top_border)
