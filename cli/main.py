@@ -364,7 +364,7 @@ def list():
             col_widths = [max(col_widths[i], len(headers[i])) for i in range(len(headers))]
             
             # Set minimum widths
-            min_widths = [4, 10, 12, 10, 10, 30, 30]
+            min_widths = [4, 10, 10, 6, 8, 30, 30]
             col_widths = [max(col_widths[i], min_widths[i]) for i in range(len(headers))]
             
             # Build table borders
