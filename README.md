@@ -91,7 +91,7 @@ EBAY_OAUTH_APP_TOKEN=your_app_token_here            # Application OAuth token (o
 
 # Server Configuration
 SECRET_KEY=your-generated-secret-key      # Generate with: openssl rand -hex 32
-DATABASE_URL=sqlite:///./sniper.db        # For local development (SQLite)
+DATABASE_URL=postgresql://postgres:password@localhost:5432/ebay_sniper  # PostgreSQL connection string
 
 # Optional: Server URL (for CLI to connect to remote server)
 SNIPER_SERVER_URL=http://localhost:8000
@@ -100,7 +100,7 @@ SNIPER_SERVER_URL=http://localhost:8000
 **Important Notes:**
 - `SECRET_KEY`: Generate a random secret key for JWT token signing (e.g., use `openssl rand -hex 32`)
 - `EBAY_ENV`: Use `sandbox` for testing, `production` for live auctions
-- `DATABASE_URL`: Defaults to SQLite. For Railway deployment, this is automatically set by Railway's PostgreSQL service
+- `DATABASE_URL`: PostgreSQL connection string. Format: `postgresql://username:password@host:port/database`. For Railway deployment, this is automatically set by Railway's PostgreSQL service
 - `EBAY_OAUTH_TOKEN`: **User OAuth access token** (required for placing bids). This is required because the system needs to place bids on your behalf, which requires user authorization. Obtain this through eBay's OAuth authorization code flow. User access tokens expire after 2 hours, but the system will automatically refresh them using the refresh token.
 - `EBAY_OAUTH_REFRESH_TOKEN`: **User OAuth refresh token** (required for automatic token refresh). When you obtain your User OAuth token through eBay's OAuth flow, you'll receive both an access token and a refresh token. Store the refresh token here to enable automatic token refresh. Refresh tokens can last up to 18 months.
 
@@ -123,15 +123,76 @@ SNIPER_SERVER_URL=http://localhost:8000
 - **Manual way**: Follow eBay's OAuth authorization code flow manually (see [eBay Developer Docs](https://developer.ebay.com/api-docs/static/oauth-consent-request.html))
 - `EBAY_OAUTH_APP_TOKEN`: **Application OAuth token** (optional, recommended). Use this for reading auction details via the Browse API. Application tokens also expire after 2 hours but can be refreshed automatically without user interaction. If not set, the system will use the User token for both reading and bidding (which may expire more frequently). The system will automatically refresh Application tokens when they expire.
 
-### 4. Initialize Database
+### 4. Install and Setup PostgreSQL (Local Development)
 
-**For Local Development (SQLite):**
-The database is automatically initialized when you first run the server. The default SQLite database will be created at `./sniper.db`.
+**macOS:**
+```bash
+# Using Homebrew (recommended)
+brew install postgresql@16
+brew services start postgresql@16
 
-**For Railway Deployment (PostgreSQL):**
-The database schema will be automatically created on first deployment. Railway's PostgreSQL service handles this automatically when `DATABASE_URL` is set.
+# Create database
+createdb ebay_sniper
 
-### 5. Run the Server
+# Verify connection
+psql -d ebay_sniper -c "SELECT version();"
+```
+
+**Linux (Ubuntu/Debian):**
+```bash
+# Install PostgreSQL
+sudo apt update
+sudo apt install postgresql postgresql-contrib
+
+# Start PostgreSQL service
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+
+# Create database user and database
+sudo -u postgres psql -c "CREATE USER postgres WITH PASSWORD 'your_password';"
+sudo -u postgres psql -c "CREATE DATABASE ebay_sniper OWNER postgres;"
+sudo -u postgres psql -c "ALTER USER postgres CREATEDB;"
+```
+
+**Linux (Fedora/RHEL/CentOS):**
+```bash
+# Install PostgreSQL
+sudo dnf install postgresql postgresql-server
+
+# Initialize and start PostgreSQL
+sudo postgresql-setup --initdb
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+
+# Create database
+sudo -u postgres createdb ebay_sniper
+```
+
+**Windows:**
+1. Download PostgreSQL from [postgresql.org](https://www.postgresql.org/download/windows/)
+2. Run the installer (remember the password you set for the `postgres` user)
+3. During installation, select "Command Line Tools"
+4. After installation, open Command Prompt or PowerShell:
+   ```cmd
+   # Create database (replace 'password' with your postgres user password)
+   createdb -U postgres ebay_sniper
+   ```
+
+**Set DATABASE_URL in .env:**
+```bash
+# For local development, update your .env file:
+DATABASE_URL=postgresql://postgres:your_password@localhost:5432/ebay_sniper
+```
+
+Replace `your_password` with the password you set for the `postgres` user (or your database user).
+
+### 5. Initialize Database
+
+The database schema is automatically initialized when you first run the server. The `init_db()` function will create all necessary tables.
+
+**Note:** If you need to run migrations (e.g., adding new columns), see the `migrations/` directory for migration scripts.
+
+### 6. Run the Server
 
 Start the server (runs on `http://localhost:8000` by default):
 
@@ -160,7 +221,7 @@ To run in the background on Linux/macOS:
 nohup python3 -m server > server.log 2>&1 &
 ```
 
-### 7. Deploy to Railway with PostgreSQL
+### 8. Deploy to Railway with PostgreSQL
 
 For production use, deploy the server to Railway so it runs 24/7 and can execute bids even when your local machine is off. Railway provides easy deployment with managed PostgreSQL databases.
 
@@ -251,7 +312,7 @@ cp .env.example .env
 # Then edit .env with your actual credentials
 ```
 
-#### Step 5: Install PostgreSQL Driver
+#### Step 4: Install PostgreSQL Driver
 
 Since we're using PostgreSQL, you need to add the PostgreSQL adapter to your requirements:
 
@@ -269,7 +330,7 @@ Since we're using PostgreSQL, you need to add the PostgreSQL adapter to your req
 
 3. Railway will automatically rebuild and redeploy
 
-#### Step 6: Verify Deployment
+#### Step 5: Verify Deployment
 
 1. After deployment completes, Railway will provide a URL like `https://your-app.up.railway.app`
 2. Click on your application service → "Settings" → "Generate Domain" if you want a custom domain
@@ -279,7 +340,7 @@ Since we're using PostgreSQL, you need to add the PostgreSQL adapter to your req
    - Click on the latest deployment
    - Check logs for "Database initialized" message
 
-#### Step 7: Configure CLI to Use Remote Server
+#### Step 6: Configure CLI to Use Remote Server
 
 Update your local CLI to point to the Railway server:
 
@@ -392,7 +453,8 @@ python3 -m cli logs 1
 
 **Database Issues:**
 - If you see database errors, ensure the directory is writable
-- For SQLite: check file permissions on `sniper.db`
+- For PostgreSQL: verify DATABASE_URL is correct and database exists
+- Check PostgreSQL connection: `psql $DATABASE_URL -c "SELECT 1;"`
 - For PostgreSQL: ensure the database exists and connection string is correct
 
 **eBay API Issues:**
@@ -414,7 +476,7 @@ python3 -m cli logs 1
 
 - **Server**: FastAPI server with single-worker bid execution loop
 - **CLI**: Click-based CLI that communicates with server via HTTPS
-- **Database**: SQLite (single-tenant, can be changed via DATABASE_URL)
+- **Database**: PostgreSQL (local and production)
 - **Worker**: Long-running loop that checks auctions and executes bids at T-3 seconds
 
 ## Key Features
