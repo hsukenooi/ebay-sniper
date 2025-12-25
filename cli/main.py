@@ -66,11 +66,11 @@ def list():
         for listing in all_listings:
             status = listing['status']
             
-            # Always show Scheduled items
-            if status == "Scheduled":
+            # Always show Scheduled, Executing, and BidPlaced items
+            if status in ["Scheduled", "Executing", "BidPlaced"]:
                 filtered_listings.append(listing)
-            # Show Failed or Cancelled items if Ends At is within a week of today
-            elif status in ["Failed", "Cancelled"]:
+            # Show Failed, Cancelled, or Skipped items if Ends At is within a week of today
+            elif status in ["Failed", "Cancelled", "Skipped"]:
                 # Parse the auction_end_time_utc string to datetime
                 ends_at_utc = datetime.fromisoformat(listing['auction_end_time_utc'].replace("Z", "+00:00"))
                 ends_at_date = ends_at_utc.date()
