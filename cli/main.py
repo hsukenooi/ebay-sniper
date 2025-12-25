@@ -92,7 +92,7 @@ def list():
         
         # Print header: ID, Status, Current Bid, Max Bid, Time Left, Outcome, Final Price, Item, URL
         click.echo(f"{'ID':<4}  {'Status':<12}  {'Current Bid':<12}  {'Max Bid':<10}  {'Time Left':<12}  {'Outcome':<8}  {'Final':<10}  {'Item':<48}  {'URL':<40}")
-               click.echo("-" * 160)
+        click.echo("-" * 160)
         
         # Print rows
         for listing in filtered_listings:
