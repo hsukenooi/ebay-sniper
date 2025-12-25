@@ -347,7 +347,7 @@ def list():
             return rows
         
         # Helper function to print a table
-        def print_table(title, listings):
+        def print_table(title, listings, show_summary=False):
             if not listings:
                 return
             
@@ -381,6 +381,7 @@ def list():
             top_border = build_separator("┌", "┬", "┐", col_widths)
             bottom_border = build_separator("└", "┴", "┘", col_widths)
             header_separator = build_separator("├", "┼", "┤", col_widths)
+            summary_separator = build_separator("├", "┼", "┤", col_widths)
             
             # Print title
             click.echo(f"\n{title}")
@@ -397,6 +398,34 @@ def list():
                 data_row = "│ " + " │ ".join(f"{str(row[i]):<{col_widths[i]}}" for i in range(len(row))) + " │"
                 click.echo(data_row)
             
+            # Add summary row for Active Listings
+            if show_summary:
+                click.echo(summary_separator)
+                # Calculate totals
+                total_count = len(sorted_listings)
+                total_current = sum(
+                    float(listing['current_price']) if isinstance(listing['current_price'], str) 
+                    else listing['current_price'] 
+                    for listing in sorted_listings
+                )
+                total_max = sum(
+                    float(listing['max_bid']) if isinstance(listing['max_bid'], str) 
+                    else listing['max_bid'] 
+                    for listing in sorted_listings
+                )
+                
+                summary_row_data = [
+                    f"{total_count}",
+                    "",
+                    f"${total_current:.2f}",
+                    f"${total_max:.2f}",
+                    "",
+                    "",
+                    ""
+                ]
+                summary_row = "│ " + " │ ".join(f"{summary_row_data[i]:<{col_widths[i]}}" for i in range(len(headers))) + " │"
+                click.echo(summary_row)
+            
             click.echo(bottom_border)
         
         # Print both tables
@@ -404,8 +433,8 @@ def list():
             click.echo("No listings found.")
             return
         
-        # Print active listings first
-        print_table("Active Listings", active_listings)
+        # Print active listings first (with summary)
+        print_table("Active Listings", active_listings, show_summary=True)
         
         # Print inactive listings
         print_table("Inactive Listings", inactive_listings)
