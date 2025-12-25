@@ -64,7 +64,14 @@ class SniperClient:
             f"{self.server_url}/sniper/{auction_id}/status",
             headers=self._get_headers()
         )
-        response.raise_for_status()
+        if not response.ok:
+            # Try to extract error detail from response
+            try:
+                error_data = response.json()
+                error_msg = error_data.get("detail", response.text)
+                raise requests.exceptions.HTTPError(f"{response.status_code} {response.reason}: {error_msg}")
+            except (ValueError, KeyError):
+                response.raise_for_status()
         return response.json()
     
     def remove_sniper(self, auction_id: int):

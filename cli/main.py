@@ -160,8 +160,11 @@ def show(auction_id):
         if listing['status'] == 'Skipped' and listing.get('skip_reason'):
             click.echo(f"Skip Reason: {listing['skip_reason']}")
         
-        if listing.get('last_price_refresh_utc'):
-            click.echo(f"Last Price Refresh: {client.to_local_time(listing['last_price_refresh_utc'])}")
+        last_refresh = listing.get('last_price_refresh_utc')
+        if last_refresh:
+            click.echo(f"Last Price Refresh: {client.to_local_time(last_refresh)}")
+        else:
+            click.echo("Last Price Refresh: Never")
     except Exception as e:
         click.echo(f"Failed to show listing: {e}", err=True)
         sys.exit(1)
