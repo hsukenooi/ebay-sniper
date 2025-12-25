@@ -133,38 +133,92 @@ def show(auction_id):
         client = SniperClient()
         listing = client.get_status(auction_id)
         
-        click.echo(f"ID: {listing['id']}")
-        click.echo(f"Status: {listing['status']}")
-        click.echo(f"Item: {listing['item_title']}")
-        click.echo(f"Listing Number: {listing['listing_number']}")
-        click.echo(f"URL: {listing['listing_url']}")
-        
+        # Prepare data for table
         max_bid = float(listing['max_bid']) if isinstance(listing['max_bid'], str) else listing['max_bid']
         current_price = float(listing['current_price']) if isinstance(listing['current_price'], str) else listing['current_price']
-        click.echo(f"Current Price: ${current_price:.2f}")
-        click.echo(f"Max Bid: ${max_bid:.2f}")
-        click.echo(f"Currency: {listing.get('currency', 'USD')}")
-        click.echo(f"Ends At: {client.to_local_time(listing['auction_end_time_utc'])}")
-        
-        # Show outcome and final price
-        outcome = listing.get('outcome', 'Pending')
-        click.echo(f"Outcome: {outcome}")
-        
         final_price = listing.get('final_price')
+        final_price_str = "N/A"
         if final_price is not None:
             final_price_float = float(final_price) if isinstance(final_price, str) else final_price
-            click.echo(f"Final Price: ${final_price_float:.2f}")
-        else:
-            click.echo("Final Price: N/A")
+            final_price_str = f"${final_price_float:.2f}"
         
-        if listing['status'] == 'Skipped' and listing.get('skip_reason'):
-            click.echo(f"Skip Reason: {listing['skip_reason']}")
-        
+        outcome = listing.get('outcome', 'Pending')
         last_refresh = listing.get('last_price_refresh_utc')
-        if last_refresh:
-            click.echo(f"Last Price Refresh: {client.to_local_time(last_refresh)}")
-        else:
-            click.echo("Last Price Refresh: Never")
+        last_refresh_str = client.to_local_time(last_refresh) if last_refresh else "Never"
+        
+        # Build table data
+        rows = [
+            ("ID", str(listing['id'])),
+            ("Status", listing['status']),
+            ("Item", listing['item_title']),
+            ("Listing Number", listing['listing_number']),
+            ("Seller", listing.get('seller_name', 'N/A')),
+            ("URL", listing['listing_url']),
+            ("Current Price", f"${current_price:.2f}"),
+            ("Max Bid", f"${max_bid:.2f}"),
+            ("Currency", listing.get('currency', 'USD')),
+            ("Ends At", client.to_local_time(listing['auction_end_time_utc'])),
+            ("Outcome", outcome),
+            ("Final Price", final_price_str),
+        ]
+        
+        # Add skip reason if applicable
+        if listing['status'] == 'Skipped' and listing.get('skip_reason'):
+            rows.append(("Skip Reason", listing['skip_reason']))
+        
+        rows.append(("Last Price Refresh", last_refresh_str))
+        
+        # Calculate column widths
+        label_width = max(len(row[0]) for row in rows)
+        value_width = max(len(row[1]) for row in rows)
+        
+        # Ensure minimum widths
+        label_width = max(label_width, 20)
+        value_width = max(value_width, 50)
+        
+        # Print table
+        top_border = "┌" + "─" * (label_width + 2) + "┬" + "─" * (value_width + 2) + "┐"
+        bottom_border = "└" + "─" * (label_width + 2) + "┴" + "─" * (value_width + 2) + "┘"
+        separator = "├" + "─" * (label_width + 2) + "┼" + "─" * (value_width + 2) + "┤"
+        
+        click.echo(top_border)
+        click.echo(f"│ {('Field'):<{label_width}} │ {('Value'):<{value_width}} │")
+        click.echo(separator)
+        
+        for label, value in rows:
+            # Handle long values by wrapping (especially URLs and long item titles)
+            if len(value) > value_width:
+                # Split long values into multiple lines
+                # If value contains spaces, wrap by words; otherwise wrap by characters
+                if ' ' in value:
+                    # Wrap by words
+                    words = value.split(' ')
+                    lines = []
+                    current_line = ""
+                    for word in words:
+                        test_line = current_line + (" " if current_line else "") + word
+                        if len(test_line) <= value_width:
+                            current_line = test_line
+                        else:
+                            if current_line:
+                                lines.append(current_line)
+                            current_line = word
+                    if current_line:
+                        lines.append(current_line)
+                else:
+                    # Wrap by characters (for URLs without spaces)
+                    lines = []
+                    for i in range(0, len(value), value_width):
+                        lines.append(value[i:i + value_width])
+                
+                # Print wrapped lines
+                for i, line in enumerate(lines):
+                    label_display = label if i == 0 else ""
+                    click.echo(f"│ {label_display:<{label_width}} │ {line:<{value_width}} │")
+            else:
+                click.echo(f"│ {label:<{label_width}} │ {value:<{value_width}} │")
+        
+        click.echo(bottom_border)
     except Exception as e:
         click.echo(f"Failed to show listing: {e}", err=True)
         sys.exit(1)
