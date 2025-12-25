@@ -90,11 +90,8 @@ def list():
             key=lambda x: datetime.fromisoformat(x['auction_end_time_utc'].replace("Z", "+00:00"))
         )
         
-        # Print header: ID, Status, Current Bid, Max Bid, Time Left, Item, URL
-        click.echo(f"{'ID':<4}  {'Status':<12}  {'Current Bid':<12}  {'Max Bid':<10}  {'Time Left':<12}  {'Item':<48}  {'URL':<40}")
-        click.echo("-" * 130)
-        
-        # Print rows
+        # Prepare data for table
+        table_rows = []
         for listing in filtered_listings:
             # Format time remaining until auction ends
             time_remaining = client.time_until_auction_end(listing['auction_end_time_utc'])
@@ -116,10 +113,47 @@ def list():
             
             url = listing['listing_url']
             
-            click.echo(
-                f"{listing['id']:<4}  {listing['status']:<12}  {current_bid_str:<12}  {max_bid_str:<10}  "
-                f"{time_remaining:<12}  {item_title:<48}  {url:<40}"
-            )
+            table_rows.append((
+                str(listing['id']),
+                listing['status'],
+                current_bid_str,
+                max_bid_str,
+                time_remaining,
+                item_title,
+                url
+            ))
+        
+        # Calculate column widths (header widths + data widths)
+        headers = ["ID", "Status", "Current Bid", "Max Bid", "Time Left", "Item", "URL"]
+        col_widths = [max(len(str(row[i])) for row in table_rows) if table_rows else 0 for i in range(len(headers))]
+        col_widths = [max(col_widths[i], len(headers[i])) for i in range(len(headers))]
+        
+        # Set minimum widths
+        min_widths = [4, 10, 12, 10, 10, 30, 30]
+        col_widths = [max(col_widths[i], min_widths[i]) for i in range(len(headers))]
+        
+        # Build table borders
+        def build_separator(left, middle, right, widths):
+            return left + middle.join("─" * (w + 2) for w in widths) + right
+        
+        top_border = build_separator("┌", "┬", "┐", col_widths)
+        bottom_border = build_separator("└", "┴", "┘", col_widths)
+        header_separator = build_separator("├", "┼", "┤", col_widths)
+        row_separator = build_separator("├", "┼", "┤", col_widths)
+        
+        # Print table
+        click.echo(top_border)
+        # Print header
+        header_row = "│ " + " │ ".join(f"{headers[i]:<{col_widths[i]}}" for i in range(len(headers))) + " │"
+        click.echo(header_row)
+        click.echo(header_separator)
+        
+        # Print data rows
+        for row in table_rows:
+            data_row = "│ " + " │ ".join(f"{str(row[i]):<{col_widths[i]}}" for i in range(len(row))) + " │"
+            click.echo(data_row)
+        
+        click.echo(bottom_border)
     except Exception as e:
         click.echo(f"Failed to list listings: {e}", err=True)
         sys.exit(1)
