@@ -8,7 +8,7 @@ import os
 import requests
 from dotenv import load_dotenv
 from database import get_db, Auction, BidAttempt, AuctionStatus, BidResult, AuctionOutcome, SessionLocal
-from .models import AuthRequest, AuthResponse, AddSniperRequest, AuctionResponse, BidAttemptResponse
+from .models import AuthRequest, AuthResponse, AddSniperRequest, AuctionResponse, BidAttemptResponse, BulkAddRequest, BulkAddResponse, BulkAddItemResult, BulkAddItemRequest
 from .ebay_client import eBayClient
 import logging
 
@@ -129,6 +129,103 @@ def add_sniper(request: AddSniperRequest, db: Session = Depends(get_db), usernam
     db.refresh(auction)
     
     return AuctionResponse.model_validate(auction)
+
+
+@app.post("/sniper/bulk", response_model=BulkAddResponse)
+def bulk_add_snipers(request: BulkAddRequest, db: Session = Depends(get_db), username: str = Depends(verify_token)):
+    """Bulk add multiple listings."""
+    results = []
+    
+    for item in request.items:
+        result = BulkAddItemResult(
+            listing_number=item.listing_number,
+            max_bid=item.max_bid,
+            success=False
+        )
+        
+        try:
+            # Check if auction already exists in database
+            existing = db.query(Auction).filter(Auction.listing_number == item.listing_number).first()
+            if existing:
+                result.error_message = "Auction already exists"
+                results.append(result)
+                continue
+            
+            # Fetch auction details from eBay
+            try:
+                details = ebay_client.get_auction_details(item.listing_number)
+            except ValueError as e:
+                result.error_message = f"eBay API configuration error: {str(e)}"
+                results.append(result)
+                continue
+            except requests.exceptions.RequestException as e:
+                error_detail = f"Failed to fetch auction from eBay: {str(e)}"
+                if hasattr(e, 'response') and e.response is not None:
+                    status_code = e.response.status_code
+                    error_detail += f" (HTTP {status_code})"
+                    if status_code == 404:
+                        error_detail = "Listing not found"
+                result.error_message = error_detail
+                results.append(result)
+                continue
+            except Exception as e:
+                result.error_message = f"Failed to fetch auction details: {str(e)}"
+                results.append(result)
+                continue
+            
+            current_price = details["current_price"]
+            auction_end_time = details["auction_end_time_utc"]
+            
+            # Validate auction hasn't ended
+            # auction_end_time from details is already a datetime object (naive UTC)
+            now = datetime.utcnow()
+            if auction_end_time <= now:
+                result.error_message = "Auction has ended"
+                results.append(result)
+                continue
+            
+            # Validate max_bid > current_price
+            if item.max_bid <= current_price:
+                result.error_message = f"Max bid (${item.max_bid:.2f}) must be greater than current price (${current_price:.2f})"
+                results.append(result)
+                continue
+            
+            # Create auction
+            auction = Auction(
+                listing_number=item.listing_number,
+                listing_url=details["listing_url"],
+                item_title=details["item_title"],
+                seller_name=details.get("seller_name"),
+                current_price=current_price,
+                max_bid=item.max_bid,
+                currency=details["currency"],
+                auction_end_time_utc=auction_end_time,
+                last_price_refresh_utc=now,
+                status=AuctionStatus.SCHEDULED.value,
+                outcome=AuctionOutcome.PENDING.value,
+            )
+            
+            db.add(auction)
+            db.commit()
+            db.refresh(auction)
+            
+            # Success
+            result.success = True
+            result.auction_id = auction.id
+            result.item_title = auction.item_title
+            result.current_price = auction.current_price
+            result.auction_end_time_utc = auction.auction_end_time_utc
+            result.listing_url = auction.listing_url
+            results.append(result)
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Unexpected error processing bulk add item {item.listing_number}: {e}", exc_info=True)
+            result.error_message = f"Unexpected error: {str(e)}"
+            results.append(result)
+            continue
+    
+    return BulkAddResponse(results=results)
 
 
 @app.get("/sniper/list", response_model=List[AuctionResponse])

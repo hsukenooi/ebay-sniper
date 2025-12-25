@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, List
 
 
 class AuthRequest(BaseModel):
@@ -44,4 +44,31 @@ class BidAttemptResponse(BaseModel):
     error_message: Optional[str]
     
     model_config = {"from_attributes": True}
+
+
+class BulkAddItemRequest(BaseModel):
+    listing_number: str
+    max_bid: Decimal
+
+
+class BulkAddRequest(BaseModel):
+    items: List[BulkAddItemRequest]
+
+
+class BulkAddItemResult(BaseModel):
+    listing_number: str
+    max_bid: Decimal
+    success: bool
+    auction_id: Optional[int] = None
+    item_title: Optional[str] = None
+    current_price: Optional[Decimal] = None
+    auction_end_time_utc: Optional[datetime] = None
+    listing_url: Optional[str] = None
+    error_message: Optional[str] = None
+    
+    model_config = {"from_attributes": True}
+
+
+class BulkAddResponse(BaseModel):
+    results: List[BulkAddItemResult]
 

@@ -4,6 +4,7 @@ from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta
 from .client import SniperClient
 from .config import save_token, get_timezone
+from .bulk_parser import parse_bulk_input
 import sys
 
 
@@ -49,6 +50,235 @@ def add(listing_number, max_bid):
         sys.exit(1)
     except Exception as e:
         click.echo(f"Failed to add listing: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command("add-bulk")
+def add_bulk():
+    """Bulk add listings from stdin.
+    
+    Reads input from stdin until EOF. Supports multiple formats:
+    - listing_number max_bid
+    - listing_number,max_bid
+    - listing_number<TAB>max_bid
+    - https://www.ebay.com/itm/listing_number max_bid
+    
+    Ignores blank lines and lines starting with #.
+    """
+    try:
+        # Read all input from stdin
+        lines = sys.stdin.readlines()
+        
+        # Parse input
+        parsed_items = parse_bulk_input(lines)
+        
+        # Separate valid items from duplicates/invalid
+        valid_items = []
+        row_mapping = {}  # Map row number to index in parsed_items for output
+        
+        seen_listings = set()
+        for row_num, listing_number, max_bid, original_line in parsed_items:
+            # Check if this is a duplicate from the parser (max_bid is None but listing_number is set)
+            is_duplicate_from_parser = (listing_number is not None and max_bid is None and listing_number in seen_listings)
+            
+            if listing_number is None:
+                # Invalid line - no listing number
+                valid_items.append({
+                    'row_num': row_num,
+                    'listing_number': None,
+                    'max_bid': None,
+                    'original_line': original_line,
+                    'is_duplicate': False
+                })
+                continue
+            
+            # Check for duplicates within input
+            if listing_number in seen_listings or is_duplicate_from_parser:
+                valid_items.append({
+                    'row_num': row_num,
+                    'listing_number': listing_number,
+                    'max_bid': max_bid,  # May be None if duplicate from parser
+                    'original_line': original_line,
+                    'is_duplicate': True
+                })
+                continue
+            
+            # Check if max_bid is missing (parse error, not duplicate)
+            if max_bid is None:
+                valid_items.append({
+                    'row_num': row_num,
+                    'listing_number': listing_number,
+                    'max_bid': None,
+                    'original_line': original_line,
+                    'is_duplicate': False
+                })
+                continue
+            
+            # Valid item
+            seen_listings.add(listing_number)
+            valid_items.append({
+                'row_num': row_num,
+                'listing_number': listing_number,
+                'max_bid': max_bid,
+                'original_line': original_line,
+                'is_duplicate': False
+            })
+        
+        # Prepare request payload (only valid, non-duplicate items)
+        request_items = [
+            {'listing_number': item['listing_number'], 'max_bid': float(item['max_bid'])}
+            for item in valid_items
+            if item['listing_number'] is not None and item['max_bid'] is not None and not item['is_duplicate']
+        ]
+        
+        # Call server
+        client = SniperClient()
+        response = client.bulk_add_snipers(request_items)
+        
+        # Build results mapping by listing_number
+        server_results = {r['listing_number']: r for r in response['results']}
+        
+        # Build output results
+        output_results = []
+        for item in valid_items:
+            row_num = item['row_num']
+            
+            if item['is_duplicate']:
+                output_results.append({
+                    'row': row_num,
+                    'listing': item['listing_number'],
+                    'max_bid': f"{item['max_bid']:.2f}" if item['max_bid'] else '-',
+                    'result': 'Duplicate',
+                    'auction_id': '-',
+                    'ends_at': '-',
+                    'url': '-',
+                    'reason': 'Duplicate listing in input'
+                })
+            elif item['listing_number'] is None or item['max_bid'] is None:
+                output_results.append({
+                    'row': row_num,
+                    'listing': item.get('listing_number', 'Invalid') if item.get('listing_number') else 'Invalid',
+                    'max_bid': '-',
+                    'result': 'Error',
+                    'auction_id': '-',
+                    'ends_at': '-',
+                    'url': '-',
+                    'reason': 'Invalid format - could not parse listing number or max bid'
+                })
+            else:
+                server_result = server_results.get(item['listing_number'])
+                if server_result and server_result.get('success'):
+                    # Success - handle datetime serialization
+                    ends_at_str = '-'
+                    if server_result.get('auction_end_time_utc'):
+                        # Handle both string and datetime objects
+                        ends_at = server_result['auction_end_time_utc']
+                        if isinstance(ends_at, str):
+                            ends_at_str = client.to_local_time(ends_at)
+                        elif hasattr(ends_at, 'isoformat'):
+                            # It's a datetime object, convert to ISO string first
+                            ends_at_iso = ends_at.isoformat()
+                            ends_at_str = client.to_local_time(ends_at_iso)
+                        else:
+                            ends_at_str = str(ends_at)
+                    
+                    output_results.append({
+                        'row': row_num,
+                        'listing': item['listing_number'],
+                        'max_bid': f"{item['max_bid']:.2f}",
+                        'result': 'Added',
+                        'auction_id': str(server_result['auction_id']),
+                        'ends_at': ends_at_str,
+                        'url': server_result.get('listing_url', '-'),
+                        'reason': '-'
+                    })
+                else:
+                    # Error from server
+                    error_msg = server_result.get('error_message', 'Unknown error') if server_result else 'Item not processed'
+                    output_results.append({
+                        'row': row_num,
+                        'listing': item['listing_number'],
+                        'max_bid': f"{item['max_bid']:.2f}",
+                        'result': 'Error',
+                        'auction_id': '-',
+                        'ends_at': '-',
+                        'url': '-',
+                        'reason': error_msg
+                    })
+        
+        # Calculate summary
+        processed_count = len(output_results)
+        added_count = sum(1 for r in output_results if r['result'] == 'Added')
+        error_count = sum(1 for r in output_results if r['result'] == 'Error')
+        duplicate_count = sum(1 for r in output_results if r['result'] == 'Duplicate')
+        
+        # Print summary
+        click.echo(f"Processed: {processed_count}  Added: {added_count}  Errors: {error_count}  Duplicates: {duplicate_count}\n")
+        
+        # Print table
+        if output_results:
+            headers = ["Row", "Listing", "MaxBid", "Result", "AuctionID", "Ends At (Local)", "URL", "Reason"]
+            
+            # Calculate column widths
+            col_widths = []
+            for i, header in enumerate(headers):
+                max_width = len(header)
+                for result in output_results:
+                    value = str(result.get(header.lower().replace(' ', '_').replace('(', '').replace(')', ''), ''))
+                    if header == "Row":
+                        value = str(result['row'])
+                    elif header == "Listing":
+                        value = result['listing']
+                    elif header == "MaxBid":
+                        value = result['max_bid']
+                    elif header == "Result":
+                        value = result['result']
+                    elif header == "AuctionID":
+                        value = result['auction_id']
+                    elif header == "Ends At (Local)":
+                        value = result['ends_at']
+                    elif header == "URL":
+                        value = result['url']
+                    elif header == "Reason":
+                        value = result['reason']
+                    max_width = max(max_width, len(value))
+                col_widths.append(max(max_width, 8))  # Minimum width of 8
+            
+            # Build table borders
+            def build_separator(left, middle, right, widths):
+                return left + middle.join("─" * (w + 2) for w in widths) + right
+            
+            top_border = build_separator("┌", "┬", "┐", col_widths)
+            bottom_border = build_separator("└", "┴", "┘", col_widths)
+            header_separator = build_separator("├", "┼", "┤", col_widths)
+            
+            # Print table
+            click.echo(top_border)
+            header_row = "│ " + " │ ".join(f"{headers[i]:<{col_widths[i]}}" for i in range(len(headers))) + " │"
+            click.echo(header_row)
+            click.echo(header_separator)
+            
+            for result in output_results:
+                row_data = [
+                    str(result['row']),
+                    result['listing'],
+                    result['max_bid'],
+                    result['result'],
+                    result['auction_id'],
+                    result['ends_at'],
+                    result['url'],
+                    result['reason']
+                ]
+                data_row = "│ " + " │ ".join(f"{row_data[i]:<{col_widths[i]}}" for i in range(len(row_data))) + " │"
+                click.echo(data_row)
+            
+            click.echo(bottom_border)
+        
+    except KeyboardInterrupt:
+        click.echo("\nCancelled.", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Failed to bulk add listings: {e}", err=True)
         sys.exit(1)
 
 

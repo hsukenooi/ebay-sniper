@@ -93,6 +93,29 @@ class SniperClient:
         data = response.json()
         return data if data else None
     
+    def bulk_add_snipers(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Bulk add multiple listings.
+        
+        Args:
+            items: List of dicts with 'listing_number' and 'max_bid' keys
+            
+        Returns:
+            Response dict with 'results' list containing per-item results
+        """
+        response = requests.post(
+            f"{self.server_url}/sniper/bulk",
+            json={"items": items},
+            headers=self._get_headers()
+        )
+        if not response.ok:
+            try:
+                error_data = response.json()
+                error_msg = error_data.get("detail", response.text)
+                raise requests.exceptions.HTTPError(f"{response.status_code} {response.reason}: {error_msg}")
+            except (ValueError, KeyError):
+                response.raise_for_status()
+        return response.json()
+    
     def to_local_time(self, utc_time_str: str) -> str:
         """Convert UTC time string to local timezone string."""
         # Parse UTC datetime
