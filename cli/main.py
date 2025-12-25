@@ -363,8 +363,15 @@ def list():
             col_widths = [max(len(str(row[i])) for row in table_rows) if table_rows else 0 for i in range(len(headers))]
             col_widths = [max(col_widths[i], len(headers[i])) for i in range(len(headers))]
             
-            # Set minimum widths
-            min_widths = [4, 10, 10, 6, 8, 30, 30]
+            # Set minimum widths based on header length and typical content
+            # ID: 2 chars header, but IDs can be multi-digit (min 4)
+            # Status: 6 chars header, but "Scheduled"/"Executing" are 9 chars (min 10)
+            # Current: 7 chars header, content is "$XXX.XX" up to 7 chars (min 8)
+            # Max: 3 chars header, content is "$XXX.XX *" up to 9 chars (min 9)
+            # End: 3 chars header, content is "45m"/"5h"/"3d"/"Ended" up to 5 chars (min 6)
+            # Item: 4 chars header, content truncated to 48 chars (min 30)
+            # URL: 3 chars header, full URLs can be long (min 30)
+            min_widths = [4, 10, 8, 9, 6, 30, 30]
             col_widths = [max(col_widths[i], min_widths[i]) for i in range(len(headers))]
             
             # Build table borders
