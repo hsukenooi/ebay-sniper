@@ -448,11 +448,15 @@ class eBayClient:
             def escape_xml(value):
                 return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             
+            # Version 1247 is the current Trading API version (as of 2024)
+            # DetailLevel and Version are required elements for Trading API
             xml_payload = f"""<?xml version="1.0" encoding="utf-8"?>
 <PlaceOfferRequest xmlns="urn:ebay:apis:eBLBaseComponents">
     <RequesterCredentials>
         <eBayAuthToken>{escape_xml(user_token)}</eBayAuthToken>
     </RequesterCredentials>
+    <DetailLevel>ReturnAll</DetailLevel>
+    <Version>1247</Version>
     <ItemID>{escape_xml(listing_number)}</ItemID>
     <Offer>
         <MaxBid>{float(bid_amount)}</MaxBid>
@@ -463,7 +467,7 @@ class eBayClient:
             
             headers = {
                 "X-EBAY-SOA-OPERATION-NAME": "PlaceOffer",
-                "X-EBAY-SOA-SERVICE-VERSION": "1.0.0",
+                "X-EBAY-SOA-SERVICE-VERSION": "1247",
                 "X-EBAY-SOA-SECURITY-APPNAME": self.app_id,
                 "Content-Type": "text/xml",
             }
@@ -483,6 +487,8 @@ class eBayClient:
     <RequesterCredentials>
         <eBayAuthToken>{escape_xml(user_token)}</eBayAuthToken>
     </RequesterCredentials>
+    <DetailLevel>ReturnAll</DetailLevel>
+    <Version>1247</Version>
     <ItemID>{escape_xml(listing_number)}</ItemID>
     <Offer>
         <MaxBid>{float(bid_amount)}</MaxBid>
