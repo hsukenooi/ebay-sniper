@@ -303,8 +303,8 @@ class eBayClient:
         Fetch auction details including current price, end time, title, URL.
         Uses Application OAuth token (if available) or falls back to User token.
         Tries multiple methods:
-        1. Browse API getItem (standard endpoint)
-        2. Browse API getItemByLegacyId (fallback for legacy item IDs)
+        1. Browse API getItemByLegacyId (primary method)
+        2. Browse API getItem (fallback to standard endpoint)
         
         Returns dict with:
         - listing_url
@@ -315,10 +315,13 @@ class eBayClient:
         """
         self._ensure_token_valid(use_user_token=False)  # Use App token for reading
         
-        # Method 1: Try standard Browse API endpoint
+        # Method 1: Try getItemByLegacyId endpoint (primary method)
+        # Note: getItemByLegacyId doesn't support "FULL" fieldgroups, so we omit it
         try:
-            url = f"{self.base_url}/buy/browse/v1/item/{listing_number}"
-            params = {"fieldgroups": "FULL"}
+            url = f"{self.base_url}/buy/browse/v1/item/get_item_by_legacy_id"
+            params = {
+                "legacy_item_id": listing_number
+            }
             
             response = requests.get(url, headers=self._get_headers(use_user_token=False), params=params, timeout=5)
             # Handle 401 errors by attempting token refresh
@@ -334,7 +337,7 @@ class eBayClient:
         except requests.exceptions.HTTPError as e:
             # Check if it's a 404 error - if so, try fallback method
             if hasattr(e, 'response') and e.response is not None and e.response.status_code == 404:
-                logger.info(f"Standard Browse API returned 404 for {listing_number}, trying getItemByLegacyId...")
+                logger.info(f"getItemByLegacyId returned 404 for {listing_number}, trying standard Browse API endpoint...")
                 # Continue to fallback method below - don't re-raise
             else:
                 # For non-404 HTTP errors, re-raise immediately
@@ -343,13 +346,10 @@ class eBayClient:
             # For other request exceptions, re-raise immediately
             raise
         
-        # Method 2: Try getItemByLegacyId endpoint (fallback for legacy item IDs)
-        # Note: getItemByLegacyId doesn't support "FULL" fieldgroups, so we omit it
+        # Method 2: Try standard Browse API endpoint (fallback)
         try:
-            url = f"{self.base_url}/buy/browse/v1/item/get_item_by_legacy_id"
-            params = {
-                "legacy_item_id": listing_number
-            }
+            url = f"{self.base_url}/buy/browse/v1/item/{listing_number}"
+            params = {"fieldgroups": "FULL"}
             
             response = requests.get(url, headers=self._get_headers(use_user_token=False), params=params, timeout=5)
             # Handle 401 errors by attempting token refresh
@@ -371,7 +371,7 @@ class eBayClient:
                 )
             raise
         except Exception as e:
-            logger.error(f"Error in getItemByLegacyId fallback for {listing_number}: {e}")
+            logger.error(f"Error in standard Browse API fallback for {listing_number}: {e}")
             raise
     
     def _parse_trading_api_response(self, xml_response: str) -> Dict[str, Any]:
